@@ -46,4 +46,4 @@ workdir
 taskdir
 benchmarks
 logs-*
-data/
+data
