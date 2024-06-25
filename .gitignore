@@ -36,6 +36,7 @@ commands.sh
 .*.swp
 *.swp
 *.log
+log.*
 *~
 *.db
 *.gz
@@ -47,3 +48,4 @@ taskdir
 benchmarks
 logs-*
 data
+trainlatt6x6_simplex_batch1024_*

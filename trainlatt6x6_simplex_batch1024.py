@@ -8,10 +8,10 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T4.0/kernel3x3_timeembed/finetune9"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
-dataset_dir = "ising-latt6x6-T4.0/latt6x6"
+dataset_dir = "ising-latt6x6-T4.0/"
 
 stage = "train"
 # channels = 2
@@ -22,7 +22,7 @@ seq_len= 6*6
 seq_dim = (6,6)
 ckpt = None
 import glob
-# ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
+ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
@@ -55,7 +55,6 @@ class dataset_params():
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
-        self.num_integration_steps = 10
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
@@ -87,7 +86,7 @@ class Hyperparams():
         self.model = model
         self.mode = mode
         self.gamma_focal = 2.
-        self.prefactor_RC = 0.
+        self.prefactor_RC = 0.05
         self.prefactor_CE = 1.
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
@@ -98,7 +97,7 @@ class Hyperparams():
         self.flow_temp = 1.
         self.allow_nan_cfactor = True
 
-loss_mode = None
+loss_mode = "RC-focal"
 print("extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
