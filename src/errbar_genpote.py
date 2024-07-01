@@ -5,16 +5,16 @@ import os
 import time
 from copy import deepcopy
 
-seq_dim = (12,12)
-num_batches=1
-epoch1=174
-epoch2=174
+seq_dim = (6,6)
+num_batches=36
+epoch1=152
+epoch2=152
 T1=4.0
 T2=6.0
 
 val_dirname  = {
-    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T1,*seq_dim),
-    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T2,*seq_dim),
+    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T1,*seq_dim),
+    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T2,*seq_dim),
 }
 ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
@@ -92,16 +92,54 @@ def logits2seq(logits_t):
         seq_t.append(seq.reshape(-1,*seq_dim))
     return seq_t
 
+def calculateError(free_energys_list_, num_samples=4):
+    free_energys_list_ = np.array(free_energys_list_)
+    std_free = np.std(free_energys_list_, axis=0)
+    standard_error = std_free / np.sqrt(num_samples)
+    t_critical = 1.96
+    margin_of_error = t_critical * standard_error
+    free_energies = np.mean(free_energys_list_, axis=0)
+    return free_energies, margin_of_error
+
+from functools import reduce
 def histvar(seq, varfunc, bins):
     var = varfunc(seq)
-    hist, bin_edges = np.histogram(var, bins=bins)
-    bin_centers = np.array([(bin_edges[i]+bin_edges[i+1])/2. for i in range(len(bin_edges)-1)])
-    P = hist/np.sum(hist)
-    idxF = np.where(hist>0)
-    F = -np.log(P[idxF])
-    return hist, bin_centers, P, F, idxF
+    if var.shape[0]<8192*4:
+        print("WARNING:: sample not enough to generate reliable error bars")
+    P_all = []
+    idxF_all = []
+    hist_all = []
+    bin_centers_all = []
+    for ii in range(4):
+        hist, bin_edges = np.histogram(var[ii::4], bins=bins)
+        bin_centers = np.array([(bin_edges[i]+bin_edges[i+1])/2. for i in range(len(bin_edges)-1)])
+        bin_centers_all.append(bin_centers)
+        hist_all.append(hist)
+        P = hist/np.sum(hist)
+        P_all.append(P)
+        idxF = np.where(hist>0)
+        idxF_all.append(idxF)
+        # F = -np.log(P[idxF])
+        # F_all.append(F)
+    P_all = np.array(P_all)
+    hist_all = np.array(hist_all)
+    idxF_res = reduce(np.intersect1d, tuple(idxF_all))
 
-def ReadReferenceF(filename):
+    F_all = []
+    for ii in range(4):
+        F = -np.log(P_all[ii][idxF_res])
+        F_all.append(F)
+    F_all = np.array(F_all)
+
+    for ii in range(3):
+        if not np.array_equal(bin_centers_all[ii], bin_centers_all[ii+1]):
+            raise Exception("ERROR:: bin_centers not consistant")
+    hist = np.mean(hist_all)
+    P_res = calculateError(P_all)
+    F_res = calculateError(F_all)
+    return hist, bin_centers_all[0], P_res, F_res, np.array(idxF_res)
+
+def ReadReferenceF(filename, readerror=False):
     ofile_prob_E = open(filename,"r")
     Reference_dict = {}
     idx_jj = 0
@@ -118,8 +156,16 @@ def ReadReferenceF(filename):
 
         line = ofile_prob_E.readline()
         F = np.array([float(x) for x in line.split()])
-
-        Reference_dict[jj]=np.stack([bin_centers, F])
+        if readerror:
+            line = ofile_prob_E.readline()
+            if not "ERROR" in line: 
+                raise Exception("ERROR:: ERROR data not found in ", filename)
+            line = ofile_prob_E.readline()
+            errF = np.array([float(x) for x in line.split()])
+        if readerror:
+            Reference_dict[jj]=np.stack([bin_centers, F, errF])
+        else:
+            Reference_dict[jj]=np.stack([bin_centers, F])
     ofile_prob_E.close()
     return Reference_dict
 
@@ -159,10 +205,12 @@ def run_statistics(T, epoch):
     print(">>> PROCESSING:: ")
     hist_E, bin_centers_E, P_E, F_E, idxF_E = histvar(seq_t[-1], ising_boltzman_prob_nn, bins)
     np.savetxt(ofile_Prob, bin_centers_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
-    np.savetxt(ofile_Prob, P_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
+    np.savetxt(ofile_Prob, P_E[0].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
+    np.savetxt(ofile_Prob, P_E[1].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="ERROR PROB kBT=%.2f"%T)
     np.savetxt(ofile_F, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
-    np.savetxt(ofile_F, F_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
-    plt.scatter(bin_centers_E[idxF_E], F_E, label="Model prediction", marker="o", c="green")
+    np.savetxt(ofile_F, F_E[0].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
+    np.savetxt(ofile_F, F_E[1].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="ERROR F kBT=%.2f"%T)
+    plt.errorbar(bin_centers_E[idxF_E], F_E[0], yerr=F_E[1], label="Model prediction", marker="o", c="green")
     if T in Reference_dict:
         plt.plot(Reference_dict[T][0], Reference_dict[T][1], c="green", label="Ground truth")
     # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
@@ -177,24 +225,28 @@ def run_statistics(T, epoch):
 def run_interpolate_DOS():
     ### calculating DOS from the FES of two temperatures
     s_time = time.time()
-    Prediction_dict_T1 = ReadReferenceF("F-E-kBT%.2f.dat"%T1)
-    Prediction_dict_T2 = ReadReferenceF("F-E-kBT%.2f.dat"%T2)
+    Prediction_dict_T1 = ReadReferenceF("F-E-kBT%.2f.dat"%T1, readerror = True)
+    Prediction_dict_T2 = ReadReferenceF("F-E-kBT%.2f.dat"%T2, readerror = True)
     print(">>> Inpterpolating from :: ")
-    print(Prediction_dict_T1)
-    print(Prediction_dict_T2)
+    print(Prediction_dict_T1.keys())
+    print(Prediction_dict_T2.keys())
     bin_centers, idxT1, idxT2 = getIntersection(list(Prediction_dict_T1[T1][0]), list(Prediction_dict_T2[T2][0]))
     beta1 = 1/T1
     beta2 = 1/T2
     DOS = Prediction_dict_T1[T1][1][idxT1]+beta1/(beta1-beta2)*(-Prediction_dict_T1[T1][1][idxT1]+Prediction_dict_T2[T2][1][idxT2])
+    Jac_DOS = np.array([1.-beta1/(beta1-beta2), beta1/(beta1-beta2) ])
+    var_P = np.eye(2)[np.newaxis, :, :]* (np.stack([Prediction_dict_T1[T1][2][idxT1], Prediction_dict_T2[T2][2][idxT2]], axis=1)**2)[:,:,np.newaxis]
+    errDOS =  np.sqrt(np.einsum('baik,ckl->baicl', np.einsum('aij,bjk->baik', Jac_DOS[np.newaxis,np.newaxis,:], var_P), np.transpose(Jac_DOS[np.newaxis,np.newaxis,:], (0,2,1))).reshape(-1))
 
     ofile_DOS = open("DOS-E-interpolateT%.2fT%.2f.dat"%(T1,T2),"wb")
     np.savetxt(ofile_DOS, bin_centers.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS interpolated from kBT= %.2f %.2f"%(T1,T2))
     np.savetxt(ofile_DOS, DOS.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="DOS interpolated from kBT= %.2f %.2f"%(T1,T2))
+    np.savetxt(ofile_DOS, errDOS.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="ERROR DOS interpolated from kBT= %.2f %.2f"%(T1,T2))
     ofile_DOS.close()
 
     plt.figure()
-    plt.plot(bin_centers, DOS, label="DOS", c="red")
-    plt.scatter(Prediction_dict_T1[T1][0], Prediction_dict_T1[T1][1], c="k", label="$k_BT=%2f$"%T1)
+    plt.errorbar(bin_centers, DOS, yerr=errDOS, label="DOS", c="red")
+    plt.errorbar(Prediction_dict_T1[T1][0], Prediction_dict_T1[T1][1], yerr=Prediction_dict_T1[T1][2], c="k", label="$k_BT=%2f$"%T1)
     if T1 in Reference_dict:
         plt.plot(Reference_dict[T1][0], Reference_dict[T1][1], c="k")
     plt.scatter(Prediction_dict_T2[T2][0], Prediction_dict_T2[T2][1], c="green", label="$k_BT=%2f$"%T2)
@@ -211,36 +263,42 @@ def run_interpolate_DOS():
 def run_interpolate_FES(T3):
     ### Interpolating FES of any temperature from DOS and T1
     s_time = time.time()
-    DOS_dict = ReadReferenceF("DOS-E-interpolateT%.2fT%.2f.dat"%(T1,T2))
+    DOS_dict = ReadReferenceF("DOS-E-interpolateT%.2fT%.2f.dat"%(T1,T2), readerror=True)
     DOS = list(DOS_dict.values())[0]
-    Prediction_dict_T3 = ReadReferenceF("F-E-kBT%.2f.dat"%T3)
+    Prediction_dict_T3 = ReadReferenceF("F-E-kBT%.2f.dat"%T3, readerror=True)
     FES_T3 = list(Prediction_dict_T3.values())[0]
     bin_centers, idxDOS, idxT3 = getIntersection(list(DOS[0]), list(FES_T3[0]))
     assert len(idxDOS) == len(DOS[0])
 
     plt.figure()
     line_color = [plt.colormaps["gnuplot"](float(i)/float(20)) for i in range(20)]
-    plt.scatter(DOS[0], DOS[1], c="r")
+    plt.errorbar(DOS[0], DOS[1], yerr=DOS[2], c="r")
     ofile_F = open("F-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3),"wb")
     np.savetxt(ofile_F, bin_centers.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS interpolated from kBT= %.2f %.2f"%(T1,T2))
     Expectation_E_list = []
     for idx_jj,jj in enumerate(list(Reference_dict.keys())):
-        _F = (FES_T3[1][idxT3]-DOS[1])*T3/jj + DOS[1]
+        _F = (FES_T3[1][idxT3]-DOS[1][idxDOS])*T3/jj + DOS[1][idxDOS]
+        Jac_F = np.array([T3/jj, 1-T3/jj])
+        var_D = np.eye(2)[np.newaxis, :, :]*(np.stack([FES_T3[2][idxT3], DOS[2][idxDOS]], axis=1)**2)[:,:,np.newaxis]
+        err_F = np.sqrt(np.einsum('baik,ckl->baicl', np.einsum('aij,bjk->baik', Jac_F[np.newaxis,np.newaxis,:], var_D), np.transpose(Jac_F[np.newaxis,np.newaxis,:], (0,2,1))).reshape(-1))
+
         P = np.exp(-_F)
-        print(jj, np.sum(P))
         P = P/np.sum(P)
         F = _F+np.log(np.sum(P))
         np.savetxt(ofile_F, F.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="FES interpolated from DOS(kBT=%.2f %.2f) and F(kBT=%.2f)"%(T1,T2,T3))
-        # P = np.exp(-F)
-        # print(jj, np.sum(P))
-        # P = P/np.sum(P)
-        Expectation_E_list.append([jj, np.sum(bin_centers*P)])
+        np.savetxt(ofile_F, err_F.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="ERROR FES interpolated from DOS(kBT=%.2f %.2f) and F(kBT=%.2f)"%(T1,T2,T3))
+
+        var_P = (P*err_F)**2
+        Jac_Expectation = bin_centers
+        # err_Expectation = np.sqrt(Jac_Expectation@var_P@Jac_Expectation.T)
+        err_Expectation = np.sqrt(Jac_Expectation*var_P*Jac_Expectation).sum()
+        Expectation_E_list.append([jj, np.sum(bin_centers*P), err_Expectation])
         if jj == T3:
             plt.plot(Reference_dict[jj][0], Reference_dict[jj][1], c="green")
-            plt.scatter(bin_centers, F, c="green", label="$k_BT=%.2f$"%jj) 
+            plt.errorbar(bin_centers, F, yerr=err_F, c="green", label="$k_BT=%.2f$"%jj) 
         else:
             plt.plot(Reference_dict[jj][0], Reference_dict[jj][1], c=line_color[idx_jj])
-            plt.scatter(bin_centers, F, c=line_color[idx_jj], label="$k_BT=%.2f$"%jj)
+            plt.errorbar(bin_centers, F, yerr=err_F, c=line_color[idx_jj], label="$k_BT=%.2f$"%jj)
 
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
@@ -249,7 +307,7 @@ def run_interpolate_FES(T3):
     plt.savefig("F-E-interpolateDOST%.2fT%.2fFT%.2f.png"%(T1,T2,T3), bbox_inches="tight")
 
     Expectation_E_list = np.array(Expectation_E_list)
-    np.savetxt("Expectation-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3), Expectation_E_list, fmt="%4.4e", delimiter=" ", header="kBT Expectation_E")
+    np.savetxt("Expectation-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3), Expectation_E_list, fmt="%4.4e", delimiter=" ", header="kBT Expectation_E err_Expectation_E")
 
 
 def plot_statistics(T):
@@ -267,6 +325,7 @@ def plot_statistics(T):
 
 
 def plot_kBT_expectation(T3):
+    line_color = [plt.colormaps["gnuplot"](float(i)/float(20)) for i in range(20)]
     ### plot kBT-Expectation_E
     s_time = time.time()
     Expectation_E = np.loadtxt("Expectation-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3), skiprows=1)
@@ -274,12 +333,12 @@ def plot_kBT_expectation(T3):
     plt.figure()
     idx_order_ref = np.argsort(Expectation_E_REF[:,0])
     plt.plot(Expectation_E_REF[:,0][idx_order_ref], Expectation_E_REF[:,1][idx_order_ref], c="k")
-    if T3 < 3:
-        plt.scatter(Expectation_E[:,0], Expectation_E[:,1], c="blue")
-    elif T3 > 4:
-        plt.scatter(Expectation_E[:,0], Expectation_E[:,1], c="m")
-    else:
-        plt.scatter(Expectation_E[:,0], Expectation_E[:,1], c="violet")
+    # idx_select = np.where(np.abs(Expectation_E[:,1])>Expectation_E[:,2])[0]
+    idx_select = np.where(Expectation_E[:,2]<3)[0]
+    import bisect
+    idx_color = bisect.bisect_left(sorted(list(Reference_dict.keys())), T3)
+    plt.errorbar(Expectation_E[idx_select,0], Expectation_E[idx_select,1], yerr=Expectation_E[idx_select,2], c=line_color[idx_color])
+
 
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("$k_BT$", fontdict={"size":14})
@@ -289,7 +348,7 @@ def plot_kBT_expectation(T3):
 
 import sys
 if sys.argv[1] == "1":
-    # run_statistics(T2, epoch2)
+    run_statistics(T2, epoch2)
     run_statistics(T1, epoch1)
 else:
     run_interpolate_DOS()
