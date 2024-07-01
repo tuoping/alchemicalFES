@@ -5,7 +5,7 @@ import os,sys
 import time
 from copy import deepcopy
 
-alpha_min_kBT = 16
+alpha_min_kBT = 10
 seq_dim = (6,6)
 num_batches=1
 epoch1=int(sys.argv[1])
