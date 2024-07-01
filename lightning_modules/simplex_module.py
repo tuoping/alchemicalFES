@@ -32,8 +32,12 @@ def sample_cond_prob_path_2d(hyperparams, seq, seq_t, channels):
     shape = seq.shape
     batchsize = seq.shape[0]
     seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=channels).reshape(*shape, channels)
-
+    t_increment = torch.rand(batchsize).to(seq.device).float()
+    ### add t points between Inf kBT~the maximum kBT (0~min diffusion step)
+    t_min = seq_t.min()
+    t_increment = (t_increment-1.)*(t_min-0.)
     t = seq_t
+    t[torch.where(seq_t == t_min)] += t_increment[torch.where(seq_t == t_min)]
     alphas = torch.ones(*shape, channels, device=seq.device)
     alphas = alphas + t[:, None, None, None]*seq_onehot
     xt = torch.distributions.Dirichlet(alphas).sample()
@@ -179,12 +183,11 @@ class simplexModule(GeneralModule):
 
 
     def general_step(self, batch, batch_idx=None):
-        seq, seq_t, seq_prob = batch
+        seq, seq_t = batch
         ### Data augmentation by flipping the binary choices
         seq_symm = -seq+1
         seq = torch.cat([seq, seq_symm])
         seq_t = torch.cat([seq_t, seq_t])
-        seq_prob = torch.cat([seq_prob, seq_prob])
         if self.stage == "val":
             np.save("seq.npy", seq.detach().cpu().numpy())
             np.save("seq_t.npy", seq_t.detach().cpu().numpy())
@@ -197,6 +200,7 @@ class simplexModule(GeneralModule):
             xt, t = sample_cond_prob_path_2d(self.hyperparams, seq, seq_t, self.model.alphabet_size)
             if self.stage == "val":
                 np.save("t.npy", t.detach().cpu().numpy())
+
         shape = seq.shape
             
         # self.plot_probability_path(t, xt)
@@ -222,14 +226,14 @@ class simplexModule(GeneralModule):
             # np.save("Grad_celoss_logits.npy", logits.grad.detach().cpu().numpy())
             # raise RuntimeError
         losses = losses.mean(-1)
-        
+        '''
         if self.hyperparams.mode is not None and "Energy" in self.hyperparams.mode:
             norm_logits = torch.nn.functional.softmax(logits, dim=-1)
             E_pred = ising_boltzman_prob(norm_logits.reshape([*shape,self.model.alphabet_size]))
             eloss = ((E_pred*seq_t/self.hyperparams.alpha_min_kBT)*seq_prob).reshape(-1)
             self.lg("EnergyLoss", eloss)
             losses += self.hyperparams.prefactor_E* eloss
-
+        '''
         if self.hyperparams.classifier:
             raise Exception("Multitask later!")
             # lossses_energy = self.hyperparams.prefactor_E* (energy.ravel()-seq_energy)**2

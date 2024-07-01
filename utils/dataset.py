@@ -122,9 +122,8 @@ class IsingDataset(torch.utils.data.Dataset):
     def __init__(self, args, device="cuda"):
         super().__init__()
 
-        all_data = torch.from_numpy(np.load("data/%s/buffer-1000w.npy"%(args.dataset_dir))).reshape(-1, *args.toy_seq_dim).to(device=device, dtype=torch.int64)
-        all_T = torch.from_numpy(np.load("data/%s/t-1000w.npy"%(args.dataset_dir))).reshape(-1).to(device=device)
-
+        all_data = torch.from_numpy(np.load("data/%s/%s"%(args.dataset_dir, args.dataset_files[0]))).reshape(-1, *args.toy_seq_dim).to(device=device, dtype=torch.int64)
+        all_T = torch.from_numpy(np.load("data/%s/%s"%(args.dataset_dir, args.dataset_files[1]))).reshape(-1).to(device=device)
 
         # idx_shuffled = torch.randperm(all_data.shape[0])
         # all_data = all_data[idx_shuffled]
@@ -136,6 +135,7 @@ class IsingDataset(torch.utils.data.Dataset):
         self.alphabet_size = args.toy_simplex_dim
 
         self.all_t = (args.t_max/all_T).to(device=device)
+
         self.seqs = all_data.to(device=device)
         self.seqs[torch.where(self.seqs == -1)] = 0
         self.energies = ising_boltzman_prob(self.seqs)
@@ -148,7 +148,7 @@ class IsingDataset(torch.utils.data.Dataset):
         return len(self.seqs)
 
     def __getitem__(self, idx):
-        return self.seqs[idx], self.all_t[idx], self.probs[idx]
+        return self.seqs[idx], self.all_t[idx]
     
 
 
