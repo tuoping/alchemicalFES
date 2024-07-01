@@ -8,9 +8,9 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt4x4T4.0/kernel3x3/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T6.0/kernel3x3_timeembed/finetune9/"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline/epoch{sys.argv[1]}_sample{sys.argv[2]}")
-dataset_dir = "ising-latt4x4-T4.0"
+dataset_dir = "ising-latt6x6-T6.0"
 
 stage = "val"
 channels = 2
