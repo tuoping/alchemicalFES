@@ -156,16 +156,14 @@ class simplexModule(GeneralModule):
             self.RCL.buffer2rc_trajs(norm_logits)
             if self.stage == "val":
                 rc_logits= self.RCL.kde(xgrid, 1., dump_hist=False)
-                rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
+                rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(-1, *xgrid.shape), rc_seq.reshape(-1, *xgrid.shape), reduction='none', log_target=False).reshape(B, -1)
                 np.save(os.path.join(os.environ["work_dir"], f"logits_train_step{self.trainer.global_step}"), norm_logits.cpu())
             else:
                 rc_logits= self.RCL.kde(xgrid, 1.)
-                # rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
-                # rc_loss = (torch.log(rc_seq+1e-12)-torch.log(rc_logits+1e-12))**2
                 if "focal" in self.hyperparams.mode:
-                    rc_loss = (1-rc_logits)**2*torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
+                    rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(-1, *xgrid.shape), rc_seq.reshape(-1, *xgrid.shape), reduction='none', log_target=False).reshape(B, -1)
                 else:
-                    rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
+                    rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(-1, *xgrid.shape), rc_seq.reshape(-1, *xgrid.shape), reduction='none', log_target=False).reshape(B, -1)
             self.lg("RCLoss", rc_loss*self.hyperparams.prefactor_RC)
             # rc_loss.sum().backward()
             # print(logits.grad)
