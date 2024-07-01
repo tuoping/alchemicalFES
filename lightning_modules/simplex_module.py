@@ -123,10 +123,9 @@ class simplexModule(GeneralModule):
     def general_step(self, batch, batch_idx=None):
         seq, cls = batch
         ### Data augmentation by flipping the binary choices
-        if self.stage == "train":
-            seq_symm = -seq+1
-            seq = torch.cat([seq, seq_symm])
-            cls = torch.cat([cls, cls])
+        seq_symm = -seq+1
+        seq = torch.cat([seq, seq_symm])
+        cls = torch.cat([cls, cls])
             
         if self.hyperparams.model == "CNN3D":
             B, H, W, D = seq.shape
