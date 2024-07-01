@@ -157,7 +157,7 @@ class simplexModule(GeneralModule):
             if self.stage == "val":
                 rc_logits= self.RCL.kde(xgrid, 1., dump_hist=False)
                 # rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
-                rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
+                rc_loss = torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
                 np.save(os.path.join(os.environ["work_dir"], f"logits_train_step{self.trainer.global_step}"), norm_logits.cpu())
             else:
                 rc_logits= self.RCL.kde(xgrid, 1.)
@@ -166,7 +166,7 @@ class simplexModule(GeneralModule):
                     rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
                 else:
                     # rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
-                    rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
+                    rc_loss = torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
             self.lg("RCLoss", rc_loss*self.hyperparams.prefactor_RC)
             # rc_loss.sum().backward()
             # print(logits.grad)

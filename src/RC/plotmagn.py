@@ -1,17 +1,21 @@
 import numpy as np
 from collections import Counter
 import matplotlib.pyplot as plt
-import os
+import os,sys
 import time
 from copy import deepcopy
 
+
 seq_dim = (6,6)
 num_batches=1
-epoch1=165
-T1=2.0
+epoch1=int(sys.argv[1])
+epoch2=174
+T1=4.0
+T2=6.0
 
 val_dirname  = {
-    T1: "../"
+    T1: "../",
+    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.1f/kernel3x3_timeembed/finetune9/val_baseline/"%(T2)
 }
 ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test3/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
@@ -328,6 +332,18 @@ def run_statistics(T, epoch):
         plt.xlabel("Magnetization", fontdict={"size":14})
         plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
         plt.savefig("F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
+        if ii == len(seq_t)-1:
+            plt.savefig("F-MAGN-kBT%.2f.png"%(T), bbox_inches="tight")
+            ofile_Prob_end = open("PROB-MAGN-kBT%.2f.dat"%(T), "wb")
+            ofile_F_end = open("F-MAGN-kBT%.2f.dat"%(T), "wb")
+            np.savetxt(ofile_Prob_end, bin_centers_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
+            np.savetxt(ofile_Prob_end, P_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
+            np.savetxt(ofile_F_end, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
+            np.savetxt(ofile_F_end, F_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
+            ofile_F_end.flush()
+            ofile_Prob_end.flush()
+            ofile_F_end.close()
+            ofile_Prob_end.close()
         ofile_Prob.flush()
         ofile_F.flush()
         ofile_Prob.close()
@@ -381,7 +397,7 @@ def run_interpolate_FES(T3):
     assert len(idxDOS) == len(DOS[0])
 
     plt.figure()
-    line_color = [plt.colormaps["gnuplot"](float(i)/float(10)) for i in range(10)]
+    line_color = [plt.colormaps["gnuplot"](float(i)/float(20)) for i in range(20)]
     plt.scatter(DOS[0], DOS[1], c="r")
     ofile_F = open("F-MAGN-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3),"wb")
     np.savetxt(ofile_F, bin_centers.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS interpolated from kBT= %.2f %.2f"%(T1,T2))
@@ -445,7 +461,9 @@ def plot_kBT_expectation(T3):
 '''
 
 
-run_statistics(T1, epoch1)
-# run_RC_val(T1, epoch1)
+# run_statistics(T1, epoch1)
+# run_statistics(T2, epoch2)
+run_interpolate_DOS()
+run_interpolate_FES(T1)
 
 print("Total wall time:: ", time.time()-global_s_time)

@@ -6,17 +6,17 @@ import time
 from copy import deepcopy
 
 seq_dim = (12,12)
-num_batches=36
-epoch1=152
-epoch2=152
+num_batches=1
+epoch1=174
+epoch2=174
 T1=4.0
 T2=6.0
 
 val_dirname  = {
-    T1: "../../../../latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T1,*seq_dim),
-    T2: "../../../../latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T2,*seq_dim),
+    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T1,*seq_dim),
+    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T2,*seq_dim),
 }
-ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test3/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
+ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
 global_s_time = time.time()
 def pbc(i,L=seq_dim[0]):
@@ -219,7 +219,7 @@ def run_interpolate_FES(T3):
     assert len(idxDOS) == len(DOS[0])
 
     plt.figure()
-    line_color = [plt.colormaps["gnuplot"](float(i)/float(10)) for i in range(13)]
+    line_color = [plt.colormaps["gnuplot"](float(i)/float(20)) for i in range(20)]
     plt.scatter(DOS[0], DOS[1], c="r")
     ofile_F = open("F-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3),"wb")
     np.savetxt(ofile_F, bin_centers.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS interpolated from kBT= %.2f %.2f"%(T1,T2))
@@ -284,12 +284,14 @@ def plot_kBT_expectation(T3):
     plt.savefig("E-T-interpolateDOST%.2fT%.2fFT%.2f.png"%(T1,T2,T3), bbox_inches="tight")
 
 
-# run_statistics(T2, epoch2)
-# run_statistics(T1, epoch1)
-
-run_interpolate_DOS()
-run_interpolate_FES(T1)
-plot_kBT_expectation(T1)
+import sys
+if sys.argv[1] == "1":
+    # run_statistics(T2, epoch2)
+    run_statistics(T1, epoch1)
+else:
+    run_interpolate_DOS()
+    run_interpolate_FES(T1)
+    plot_kBT_expectation(T1)
 
 # run_interpolate_FES(T2)
 # plot_kBT_expectation(T2)
