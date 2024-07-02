@@ -79,12 +79,6 @@ class gaussianModule(GeneralModule):
         elif self.hyperparams.model == "CNN2D":
             xt, t, ut = sample_cond_vector_field_2d(self.hyperparams, seq, self.model.alphabet_size)
 
-        logits = self.model(xt, t, cls=cls)
-        # if self.hyperparams.model == "CNN3D":
-        #     logits = (logits.permute(0,2,3,4,1)).reshape(-1, self.model.alphabet_size)
-        # elif self.hyperparams.model == "CNN2D":
-        #     logits = (logits.permute(0,2,3,1)).reshape(-1, self.model.alphabet_size)
-        # losses = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
         
         ut_model = self.model(xt, t, cls=cls)
         if self.hyperparams.model == "CNN3D":
@@ -108,8 +102,8 @@ class gaussianModule(GeneralModule):
                 logits_pred = self.gaussian_flow_inference_2d(seq)
 
             seq_pred = torch.argmax(logits_pred, dim=-1)
-            np.save(os.path.join(os.environ["work_dir"], f"seq_val_step{self.trainer.global_step}"), seq_pred.cpu())
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}"), logits_pred.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "seq_val"), seq_pred.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "logits_val"), logits_pred.cpu())
         return losses.mean()
     
     def training_step(self, batch, batch_idx):
@@ -128,7 +122,7 @@ class gaussianModule(GeneralModule):
         B, H, W = seq.shape
         K = self.model.alphabet_size
         xx = torch.normal(0, 1*self.hyperparams.time0_scale, size=(B,H,W,K), device=self.device)
-        np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{0.0}"), xx.cpu())
+        np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"%0.0), xx.cpu())
         seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=K).reshape(B,H,W,K)
         xx_t = []
         xx_t.append(xx)
@@ -151,7 +145,7 @@ class gaussianModule(GeneralModule):
             xx = xx + u_t.permute(0,2,3,1)*1./self.hyperparams.num_integration_steps
 
             xx_t.append(xx)
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{tt}"), xx.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"(tt)), xx.cpu())
         return xx_t[-1]
 
     @torch.no_grad()
@@ -189,6 +183,7 @@ class gaussianModule(GeneralModule):
 class gaussianModule_celoss(GeneralModule):
     def __init__(self, channels, num_cls, hyperparams):
         super().__init__(hyperparams)
+        raise Exception("ERROR:: Training by cross entropy loss of the diffusion model using Gaussian basis is not implemented")
         self.load_model(channels, num_cls, hyperparams)
         self.hyperparams = hyperparams
 
@@ -225,17 +220,7 @@ class gaussianModule_celoss(GeneralModule):
             logits = (logits.permute(0,2,3,1)).reshape(-1, self.model.alphabet_size)
         losses = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
         
-        # ut_model = self.model(xt, t, cls=cls)
-        # if self.hyperparams.model == "CNN3D":
-        #     losses = torch.norm((ut_model.permute(0,2,3,4,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
-        # elif self.hyperparams.model == "CNN2D":
-        #     losses = torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
 
-
-        if self.hyperparams.mode == "focal":
-            norm_xt = torch.nn.functional.softmax(xt, dim=-1)
-            fl = ((torch.pow(norm_xt, self.hyperparams.gamma_focal).sum(-1)).reshape(B, -1))*torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
-            losses += fl
 
         losses = losses.mean(-1)
         self.lg("loss", losses)
@@ -247,8 +232,8 @@ class gaussianModule_celoss(GeneralModule):
                 logits_pred = self.gaussian_flow_inference_2d(seq)
 
             seq_pred = torch.argmax(logits_pred, dim=-1)
-            np.save(os.path.join(os.environ["work_dir"], f"seq_val_step{self.trainer.global_step}"), seq_pred.cpu())
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}"), logits_pred.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "seq_val"), seq_pred.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "logits_val"), logits_pred.cpu())
         return losses.mean()
     
     def training_step(self, batch, batch_idx):
@@ -266,10 +251,10 @@ class gaussianModule_celoss(GeneralModule):
     def gaussian_flow_inference_2d(self, seq):
         B, H, W = seq.shape
         K = self.model.alphabet_size
-        xx = torch.normal(0, 1*self.hyperparams.time0_scale, size=(B,H,W,K), device=self.device)
-        np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{0.0}"), xx.cpu())
+        xx = torch.normal(0, 1, size=(B,H,W,K), device=self.device)
+        np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"%0.0), xx.cpu())
         
-        seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=K).reshape(B,H,W,K)
+        # seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=K).reshape(B,H,W,K)
         xx_t = []
         xx_t.append(xx)
         # return xx_t[-1].permute(0,3,1,2)
@@ -282,16 +267,9 @@ class gaussianModule_celoss(GeneralModule):
             samples_ss = torch.ones(B, device=self.device)*ss
 
             logits = self.model(xx, samples_ss)
-            flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
-            sigma_t = 1-(1-self.hyperparams.sigma_min)*tt
-            xx_1 = xx_t[0]*sigma_t
-            xx_1 += tt*seq_onehot
-    
-            ut = (xx_1 - xx)/(tt-ss)
-            xx = xx + flow_probs*ut*(tt-ss)
-
+            xx = torch.nn.functional.softmax(logits.permute(0,2,3,1), -1)
             xx_t.append(xx)
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{tt}"), xx.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"%tt), xx.cpu())
         return xx_t[-1]
 
     @torch.no_grad()
