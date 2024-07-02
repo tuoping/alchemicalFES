@@ -123,32 +123,65 @@ class IsingDataset(torch.utils.data.Dataset):
         super().__init__()
 
         all_data = torch.from_numpy(np.load("data/%s/%s"%(args.dataset_dir, args.dataset_files[0]))).reshape(-1, *args.toy_seq_dim).to(device=device, dtype=torch.int64)
+        all_data[torch.where(all_data == -1)] = 0
         all_T = torch.from_numpy(np.load("data/%s/%s"%(args.dataset_dir, args.dataset_files[1]))).reshape(-1).to(device=device)
-
-        # idx_shuffled = torch.randperm(all_data.shape[0])
-        # all_data = all_data[idx_shuffled]
-        # all_t = all_t[idx_shuffled]
-
+        _elements_T, _counts_T = torch.unique(all_T, sorted=True, return_counts=True)
+        elements_T = torch.flip(_elements_T, dims=(0,))
+        counts_T = torch.flip(_counts_T, dims=(0,))
+        
+        # next_T = torch.zeros_like(all_T)
+        # next_data = torch.zeros_like(all_data)
+        # idx_all_T = 0
+        # for idx_elemT in range(len(elements_T)-1):
+        #     next_T[idx_all_T:idx_all_T+counts_T[idx_elemT]] = all_T[idx_all_T+counts_T[idx_elemT]]
+        #     next_data[idx_all_T:idx_all_T+counts_T[idx_elemT]] = all_data[idx_all_T+counts_T[idx_elemT]]
+        #     idx_all_T += counts_T[idx_elemT]
+        # next_T[idx_all_T:] = next_T[idx_all_T]
+        # next_data[idx_all_T:] = next_data[idx_all_T]
+        
+        data_onehot = torch.nn.functional.one_hot(all_data.reshape(-1), num_classes=args.toy_simplex_dim).reshape(-1, *args.toy_seq_dim, args.toy_simplex_dim)
+        prev_T = torch.zeros_like(all_T)
+        prev_data_onehot = torch.zeros_like(data_onehot).float()
+        prev_T[:counts_T[0]] = args.t_max/args.t_min
+        prev_data_onehot[:counts_T[0]] = torch.randn(size=(counts_T[0],*args.toy_seq_dim, args.toy_simplex_dim))
+        idx_all_T = counts_T[0].clone()
+        for idx_elemT in range(1, len(elements_T)):
+            idx_all_T += counts_T[idx_elemT]
+            prev_T[idx_all_T-counts_T[idx_elemT]:idx_all_T] = all_T[idx_all_T-counts_T[idx_elemT]-1].clone()
+            prev_data_onehot[idx_all_T-counts_T[idx_elemT]:idx_all_T] = data_onehot[idx_all_T-counts_T[idx_elemT]-1].clone()
         print("loaded ", all_data.shape, all_data.dtype)
 
         self.seq_len = args.toy_seq_len
         self.alphabet_size = args.toy_simplex_dim
+        if args.subset:
+            selidx = torch.randperm(len(all_T))[:args.subset_size]
+            self.all_t = (args.t_max/all_T[selidx]).to(device=device)
+            self.prev_t = (args.t_max/prev_T[selidx]).to(device=device)
 
-        self.all_t = (args.t_max/all_T).to(device=device)
+            self.seqs = all_data[selidx].to(device=device)
+            self.prev_seqs_onehot = prev_data_onehot[selidx].to(device=device)
 
-        self.seqs = all_data.to(device=device)
-        self.seqs[torch.where(self.seqs == -1)] = 0
-        self.energies = ising_boltzman_prob(self.seqs)
-        exponents = self.energies/all_T
-        min_exponent = exponents.min()
-        self.probs = torch.exp(-exponents)/torch.exp(-min_exponent)
+        else:
+            self.all_t = (args.t_max/all_T).to(device=device)
+            # self.next_t = (args.t_max/next_T).to(device=device)
+            self.prev_t = (args.t_max/prev_T).to(device=device)
+
+            self.seqs = all_data.to(device=device)
+            # self.next_seqs = next_data.to(device=device)
+            # self.next_seqs[torch.where(self.next_seqs == -1)] = 0
+            self.prev_seqs_onehot = prev_data_onehot.to(device=device)
+
+            # self.energies = ising_boltzman_prob(self.seqs)
+            # exponents = self.energies/all_T
+            # min_exponent = exponents.min()
+            # self.probs = torch.exp(-exponents)/torch.exp(-min_exponent)
 
 
     def __len__(self):
         return len(self.seqs)
 
     def __getitem__(self, idx):
-        return self.seqs[idx], self.all_t[idx]
+        return self.seqs[idx], self.all_t[idx], self.prev_seqs_onehot[idx], self.prev_t[idx]
     
 
 

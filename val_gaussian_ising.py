@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6_b/"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6/finetune2"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 
 dataset_dir = "ising-latt6x6-anneal"
@@ -19,18 +19,7 @@ seq_dim = (6, 6)
 ckpt = None
 import glob
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
-if stage == "train":
-    batch_size = 1024
-    if ckpt is not None: 
-        print("Starting from ckpt:: ", ckpt)
-elif stage == "val":
-    # batch_size = 16384*2
-    batch_size = 2048
-    if ckpt is None: 
-        raise Exception("ERROR:: ckpt not initiated")
-    print("Validating with ckpt::", ckpt)
-else:
-    raise Exception("Unrecognized stage")
+
 num_workers = 0
 max_steps = 100000
 max_epochs = 100000
@@ -79,6 +68,8 @@ class dataset_params():
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
         self.t_max = 1
+        self.t_min = 0.0001
+        self.dataset_files = ["buffer_enhancelowT_ordered.npy", "t_enhancelowT_ordered.npy"]
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
@@ -90,6 +81,19 @@ train_ds = IsingDataset(dparams)
 dparams.dataset_dir = os.path.join(dataset_dir, "val")
 # val_ds = AlCuDataset(dparams)
 val_ds = IsingDataset(dparams)
+
+if stage == "train":
+    batch_size = 1024
+    if ckpt is not None: 
+        print("Starting from ckpt:: ", ckpt)
+elif stage == "val":
+    batch_size = val_ds.all_t.shape[0]
+    # batch_size = 2048
+    if ckpt is None: 
+        raise Exception("ERROR:: ckpt not initiated")
+    print("Validating with ckpt::", ckpt)
+else:
+    raise Exception("Unrecognized stage")
 
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers, drop_last=True)
@@ -127,7 +131,7 @@ class Hyperparams():
         self.time0_scale = time0_scale
         self.num_integration_steps = 20
 
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(1024), model="CNN2D")
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D")
 hparams.gaussian_params()
 
 from lightning_modules.gaussian_module import gaussianModule

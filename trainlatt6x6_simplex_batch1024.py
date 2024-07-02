@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6_d/"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
 dataset_dir = "ising-latt6x6-anneal/"
@@ -32,7 +32,7 @@ else:
     raise Exception("Unrecognized stage")
 num_workers = 0
 max_steps = 40000000
-max_epochs = 150
+max_epochs = 240
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
@@ -52,16 +52,18 @@ class dataset_params():
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
         self.t_max = 10
+        self.t_min = 0.0001
+        self.dataset_files = ["buffer_enhancelowT_ordered.npy", "t_enhancelowT_ordered.npy"]
+        self.subset = True
+        self.subset_size = 100000
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
 from utils.dataset import AlCuDataset, IsingDataset
 dparams.dataset_dir = dataset_dir
-# train_ds = AlCuDataset(dparams)
+# dparams.dataset_dir = os.path.join(dataset_dir, "val")
 train_ds = IsingDataset(dparams)
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
-# val_ds = IsingDataset(dparams)
+
 
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 val_loader = None
@@ -81,6 +83,7 @@ class Hyperparams():
         self.seq_dim = seq_dim
         self.channels = channels
         self.model = model
+
         self.mode = mode
         if mode is not None and "RC" in "".join(mode):
             self.prefactor_RC = 1.
@@ -95,7 +98,8 @@ class Hyperparams():
         if self.classifier:
             self.prefactor_E = 1.
 
-        self.alpha_min_kBT= 10
+        self.t_max = 10.
+        self.t_min = 0.0001
 
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
@@ -106,7 +110,7 @@ class Hyperparams():
         self.flow_temp = 1.
         self.allow_nan_cfactor = True
 
-loss_mode = ["RC-distance"]
+loss_mode = None
 print("extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, lr=5e-4, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)

@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6_b/"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6_c"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
 dataset_dir = "ising-latt6x6-anneal"
@@ -18,7 +18,7 @@ seq_len= 6*6
 seq_dim = (6,6)
 ckpt = None
 import glob
-# ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
+ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
@@ -32,13 +32,13 @@ else:
     raise Exception("Unrecognized stage")
 num_workers = 0
 max_steps = 40000000
-max_epochs = 200
+max_epochs = 600
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
 else:
     limit_val_batches = 100
-grad_clip = 1.
+grad_clip = 100.
 wandb = False
 check_val_every_n_epoch = None
 val_check_interval = None
@@ -50,18 +50,18 @@ class dataset_params():
         self.toy_seq_dim = toy_seq_dim
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
-        self.t_max = 1.
+        self.t_max = 10.
+        self.t_min = 0.0001
+        self.dataset_files = ["buffer_enhancelowT_ordered.npy", "t_enhancelowT_ordered.npy"]
+        self.subset = True
+        self.subset_size = 100000
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
 from utils.dataset import AlCuDataset, IsingDataset
 dparams.dataset_dir = dataset_dir
-# train_ds = AlCuDataset(dparams)
+# dparams.dataset_dir = os.path.join(dataset_dir, "val")
 train_ds = IsingDataset(dparams)
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
-# val_ds = IsingDataset(dparams)
-
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 val_loader = None
 # val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers)
@@ -82,7 +82,8 @@ class Hyperparams():
         self.model = model
         self.mode = mode
         self.prefactor_CE = 1.
-        # self.alpha_min_kBT = 1
+        self.t_max = 10.
+        self.t_min = 0.0001
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2, time0_scale = 1):
         self.cls_expanded_simplex = cls_expanded_simplex
@@ -100,7 +101,7 @@ class Hyperparams():
         self.num_integration_steps = 20
 
 loss_mode = None
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(1024), model="CNN2D", mode=loss_mode)
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, dropout=0.8, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.gaussian_params()
 from lightning_modules.gaussian_module import gaussianModule
 model = gaussianModule(channels, num_cls=1, hyperparams=hparams)

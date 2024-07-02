@@ -28,18 +28,15 @@ def sample_cond_prob_path(hyperparams, seq, channels):
     xt = torch.distributions.Dirichlet(alphas).sample()
     return xt, t+1
 
-def sample_cond_prob_path_2d(hyperparams, seq, seq_t, channels):
+def sample_cond_prob_path_2d(hyperparams, seq, seq_t, seq_prev_onehot, seq_t_prev, channels):
     shape = seq.shape
     batchsize = seq.shape[0]
     seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=channels).reshape(*shape, channels)
-    t_increment = torch.rand(batchsize).to(seq.device).float()
-    ### add t points between Inf kBT~the maximum kBT (0~min diffusion step)
-    t_min = seq_t.min()
-    t_increment = (t_increment-1.)*(t_min-0.)
-    t = seq_t
-    t[torch.where(seq_t == t_min)] += t_increment[torch.where(seq_t == t_min)]
+
+    t = seq_t_prev
+
     alphas = torch.ones(*shape, channels, device=seq.device)
-    alphas = alphas + t[:, None, None, None]*seq_onehot
+    alphas = alphas + t[:, None, None, None]*seq_prev_onehot
     xt = torch.distributions.Dirichlet(alphas).sample()
     return xt, t+1
 
@@ -183,21 +180,26 @@ class simplexModule(GeneralModule):
 
 
     def general_step(self, batch, batch_idx=None):
-        seq, seq_t = batch
+        seq, seq_t, seq_prev_onehot, seq_t_prev = batch
         ### Data augmentation by flipping the binary choices
         seq_symm = -seq+1
         seq = torch.cat([seq, seq_symm])
+        seq_prev_onehot_symm = -seq_prev_onehot+1
+        seq_prev_onehot = torch.cat([seq_prev_onehot, seq_prev_onehot_symm])
         seq_t = torch.cat([seq_t, seq_t])
+        seq_t_prev = torch.cat([seq_t_prev, seq_t_prev])
         if self.stage == "val":
             np.save("seq.npy", seq.detach().cpu().numpy())
             np.save("seq_t.npy", seq_t.detach().cpu().numpy())
+            np.save("seq_t_prev.npy", seq_t_prev.detach().cpu().numpy())
+
             
         if self.hyperparams.model == "CNN3D":
             B, H, W, D = seq.shape
             xt, t = sample_cond_prob_path(self.hyperparams, seq, self.model.alphabet_size)
         elif self.hyperparams.model == "CNN2D":
             B, H, W = seq.shape
-            xt, t = sample_cond_prob_path_2d(self.hyperparams, seq, seq_t, self.model.alphabet_size)
+            xt, t = sample_cond_prob_path_2d(self.hyperparams, seq, seq_t, seq_prev_onehot, seq_t_prev, self.model.alphabet_size)
             if self.stage == "val":
                 np.save("t.npy", t.detach().cpu().numpy())
 

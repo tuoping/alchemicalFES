@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6_c/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/kBT1-3_latt6x6/"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-anneal"
 
@@ -23,8 +23,8 @@ if stage == "train":
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
-    # batch_size = 8192*4
-    batch_size = 1024*2
+    batch_size = 8192*4
+    # batch_size = 1024*2
     if ckpt is None: 
         raise Exception("ERROR:: ckpt not initiated")
     print("Validating with ckpt::", ckpt)
@@ -81,7 +81,7 @@ class dataset_params():
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
         self.t_max = 10
-
+        self.dataset_files = ["buffer_kBT1-3.npy", "t_kBT1-3.npy"]
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
@@ -138,7 +138,7 @@ class Hyperparams():
 
 loss_mode = ["RC-t"]
 print("extra loss::", loss_mode)
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(1024), model="CNN2D", mode=loss_mode)
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.simplex_params()
 
 

@@ -29,20 +29,24 @@ def sample_cond_vector_field(hyperparams, seq, channels):
     ut = (seq_onehot - (1-hyperparams.sigma_min)*sample_x)/sigma_t[:,None,None,None,None]
     return sample_x, t, ut.float()
 
-def sample_cond_vector_field_2d(hyperparams, seq, seq_t, channels):
+def sample_cond_vector_field_2d(hyperparams, seq, seq_t, seq_prev_onehot, seq_t_prev, channels):
     shape = seq.shape
     batchsize = seq.shape[0]
     seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=channels).reshape(*shape, channels)
-    sample_x = torch.randn(size=seq_onehot.shape, device=seq.device)
-
+    # sample_x = torch.randn(size=seq_onehot.shape, device=seq.device)
     # t = 1 - (torch.from_numpy(scipy.stats.expon().rvs(size=batchsize)*hyperparams.time_scale).to(seq.device).float())
-    t = seq_t
+    # sigma_t = 1-(1-hyperparams.sigma_min)*t
+    # sample_x *= sigma_t[:,None,None,None]
+    # sample_x += t[:,None,None,None]*seq_onehot
+    # ut = (seq_onehot - (1-hyperparams.sigma_min)*sample_x)/sigma_t[:,None,None,None]
 
-    sigma_t = 1-(1-hyperparams.sigma_min)*t
-    sample_x *= sigma_t[:,None,None,None]
-    sample_x += t[:,None,None,None]*seq_onehot
+    # random initiation of $x(t_0)$ is done in dataset.py
+    t = seq_t_prev
+    sigma_t = torch.rand(batchsize).to(seq.device).float()
+    sigma_t = sigma_t*(seq_t-seq_t_prev)
+    sample_x = seq_prev_onehot*sigma_t[:,None,None,None] + t[:,None,None,None]*seq_onehot
+    ut = (seq_onehot-sample_x)/sigma_t[:,None,None,None]
 
-    ut = (seq_onehot - (1-hyperparams.sigma_min)*sample_x)/sigma_t[:,None,None,None]
     sample_x.requires_grad = False
     return sample_x, t, ut.float()
 
@@ -175,15 +179,18 @@ class gaussianModule(GeneralModule):
         self.log('val_loss', torch.tensor(self._log["val_loss"]).mean(), prog_bar=True)
 
     def general_step(self, batch, batch_idx=None):
-        seq, seq_t, seq_prob = batch
+        seq, seq_t, seq_prev_onehot, seq_t_prev = batch
         ### Data augmentation by flipping the binary choices
         seq_symm = -seq+1
         seq = torch.cat([seq, seq_symm])
+        seq_prev_onehot_symm = -seq_prev_onehot+1
+        seq_prev_onehot = torch.cat([seq_prev_onehot, seq_prev_onehot_symm])
         seq_t = torch.cat([seq_t, seq_t])
-        seq_prob = torch.cat([seq_prob, seq_prob])
+        seq_t_prev = torch.cat([seq_t_prev, seq_t_prev])
         if self.stage == "val":
             np.save("seq.npy", seq.detach().cpu().numpy())
             np.save("seq_t.npy", seq_t.detach().cpu().numpy())
+            np.save("seq_t_prev.npy", seq_t_prev.detach().cpu().numpy())
 
 
         if self.hyperparams.model == "CNN3D":
@@ -191,12 +198,14 @@ class gaussianModule(GeneralModule):
             xt, t, ut = sample_cond_vector_field(self.hyperparams, seq, self.model.alphabet_size)
         elif self.hyperparams.model == "CNN2D":
             B, H, W = seq.shape
-            xt, t, ut = sample_cond_vector_field_2d(self.hyperparams, seq, seq_t, self.model.alphabet_size)
+            xt, t, ut = sample_cond_vector_field_2d(self.hyperparams, seq, seq_t, seq_prev_onehot, seq_t_prev, self.model.alphabet_size)
+            if self.stage == "val":
+                np.save("xt.npy", xt.detach().cpu().numpy())
+                np.save("ut.npy", ut.detach().cpu().numpy())
+                np.save("t.npy", t.detach().cpu().numpy())
+
         shape = seq.shape
 
-        logits = self.model(xt, t, cls=None)
-
-        
         ut_model = self.model(xt, t, cls=None)
         if self.hyperparams.model == "CNN3D":
             losses = torch.norm((ut_model.permute(0,2,3,4,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
@@ -205,8 +214,10 @@ class gaussianModule(GeneralModule):
                 losses = t[:,None]*torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
             else:
                 losses = torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
+        if self.stage == "val":
+            np.save("losses.npy", losses.detach().cpu().numpy())
             # self.lg("FMloss", losses)
-
+            raise RuntimeError
         if self.hyperparams.mode == "focal":
             norm_xt = torch.nn.functional.softmax(xt, dim=-1)
             fl = ((torch.pow(norm_xt, self.hyperparams.gamma_focal).sum(-1)).reshape(B, -1))*torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
@@ -215,6 +226,10 @@ class gaussianModule(GeneralModule):
         losses = losses.mean(-1)
         self.lg("loss", losses)
 
+        
+        if self.stage == "train":
+            current_lr = self.optimizers().param_groups[0]['lr']
+            self.lg("LR", torch.tensor([current_lr]))
 
         if self.stage == "val":
             if self.hyperparams.model == "CNN3D":
@@ -229,6 +244,10 @@ class gaussianModule(GeneralModule):
     
     def training_step(self, batch, batch_idx):
         self.stage = "train"
+        opt = self.optimizers()
+        # manually delete scheduler in the Trainer
+        for param_group in opt.param_groups:
+            param_group['lr'] = self.hyperparams.lr  # Set to the new learning rate
         loss = self.general_step(batch)
         # self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return loss
@@ -248,7 +267,7 @@ class gaussianModule(GeneralModule):
         xx_t = []
         xx_t.append(xx)
 
-        t_span = torch.linspace(0, 1, self.hyperparams.num_integration_steps, device = self.device)
+        t_span = torch.linspace(self.hyperparams.t_min, self.hyperparams.t_max, self.hyperparams.num_integration_steps, device = self.device)
         # for i, (ss, tt) in enumerate(zip(t_span[:-1], t_span[1:])):
         #     samples_ss = torch.ones(B, device=self.device)*ss
         # 
@@ -260,10 +279,10 @@ class gaussianModule(GeneralModule):
         # 
         #     ut = (xx_1 - xx)/(tt-ss)
         #     xx = xx + flow_probs*ut*(tt-ss)
-        for tt in t_span[1:]:
-            samples_tt = torch.ones(B, device=self.device)*tt
-            u_t = self.model(xx, samples_tt)
-            xx = xx + u_t.permute(0,2,3,1)*1./self.hyperparams.num_integration_steps
+        for i, (ss, tt) in enumerate(zip(t_span[:-1], t_span[1:])):
+            samples_ss = torch.ones(B, device=self.device)*ss
+            u_t = self.model(xx, samples_ss)
+            xx = xx + u_t.permute(0,2,3,1)*(tt-ss)
 
             xx_t.append(xx)
             np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{tt}"), xx.cpu())
@@ -287,8 +306,33 @@ class gaussianModule(GeneralModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hyperparams.lr)
-        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6)
+        # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6)
         return optimizer
+
+    def configure_gradient_clipping(self, optimizer, gradient_clip_val, gradient_clip_algorithm):
+        '''
+        # 检索所有梯度
+        all_grads = []
+        for group in optimizer.param_groups:
+            for param in group['params']:
+                if param.grad is not None:
+                    all_grads.append(param.grad.view(-1))
+        
+        # 拼接所有梯度到一个向量中
+        all_grads = torch.cat(all_grads)
+        
+        # 输出梯度的最大值、最小值和范数
+        max_grad = torch.abs(all_grads).max().item()
+        min_grad = torch.abs(all_grads).min().item()
+        norm_grad = all_grads.norm().item()
+        
+        print(f"Max Gradient: {max_grad}")
+        print(f"Min Gradient: {min_grad}")
+        print(f"Gradient Norm: {norm_grad}")
+        '''
+        # 执行梯度裁剪
+        if gradient_clip_val is not None:
+            torch.nn.utils.clip_grad_norm_(self.parameters(), gradient_clip_val)
 
     def plot_probability_path(self, t, xt):
         pass
@@ -304,6 +348,7 @@ class gaussianModule(GeneralModule):
 class gaussianModule_celoss(GeneralModule):
     def __init__(self, channels, num_cls, hyperparams):
         super().__init__(hyperparams)
+        raise Exception("ERROR:: Training by cross entropy loss of the diffusion model using Gaussian basis is not implemented")
         self.load_model(channels, num_cls, hyperparams)
         self.hyperparams = hyperparams
         self.RCL = RCLoss(RC)
@@ -325,22 +370,26 @@ class gaussianModule_celoss(GeneralModule):
         self.log('val_loss', torch.tensor(self._log["val_loss"]).mean(), prog_bar=True)
 
     def general_step(self, batch, batch_idx=None):
-        seq, seq_t, seq_prob = batch
+        seq, seq_t, seq_prev_onehot, seq_t_prev = batch
         ### Data augmentation by flipping the binary choices
         seq_symm = -seq+1
         seq = torch.cat([seq, seq_symm])
+        seq_prev_onehot_symm = -seq_prev_onehot+1
+        seq_prev_onehot = torch.cat([seq_prev_onehot, seq_prev_onehot_symm])
         seq_t = torch.cat([seq_t, seq_t])
-        seq_prob = torch.cat([seq_prob, seq_prob])
+        seq_t_prev = torch.cat([seq_t_prev, seq_t_prev])
         if self.stage == "val":
             np.save("seq.npy", seq.detach().cpu().numpy())
             np.save("seq_t.npy", seq_t.detach().cpu().numpy())
+            np.save("seq_t_prev.npy", seq_t_prev.detach().cpu().numpy())
+
 
         if self.hyperparams.model == "CNN3D":
             B, H, W, D = seq.shape
             xt, t, ut = sample_cond_vector_field(self.hyperparams, seq, self.model.alphabet_size)
         elif self.hyperparams.model == "CNN2D":
             B, H, W = seq.shape
-            xt, t, ut = sample_cond_vector_field_2d(self.hyperparams, seq, seq_t, self.model.alphabet_size)
+            xt, t, ut = sample_cond_vector_field_2d(self.hyperparams, seq, seq_t, seq_prev_onehot, seq_t_prev, self.model.alphabet_size)
         shape = seq.shape
 
         logits = self.model(xt, t, cls=None)
@@ -349,7 +398,7 @@ class gaussianModule_celoss(GeneralModule):
         elif self.hyperparams.model == "CNN2D":
             logits = (logits.permute(0,2,3,1)).reshape(-1, self.model.alphabet_size)
         losses = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
-        self.lg("FMloss", losses)
+        self.lg("CEloss", losses)
 
         if self.hyperparams.mode is not None and "RC" in "".join(self.hyperparams.mode):
             xgrid = torch.linspace(-36, 36, 36+1, device=logits.device)
@@ -394,7 +443,11 @@ class gaussianModule_celoss(GeneralModule):
 
 
             losses += rc_loss.mean(-1)*self.hyperparams.prefactor_RC
+
         
+        if self.stage == "train":
+            current_lr = self.optimizers().param_groups[0]['lr']
+            self.lg("LR", torch.tensor([current_lr]))
 
 
         losses = losses.mean(-1)
@@ -426,14 +479,14 @@ class gaussianModule_celoss(GeneralModule):
     def gaussian_flow_inference_2d(self, seq):
         B, H, W = seq.shape
         K = self.model.alphabet_size
-        xx = torch.normal(0, 1*self.hyperparams.time0_scale, size=(B,H,W,K), device=self.device)
+        xx = torch.normal(0, 1, size=(B,H,W,K), device=self.device)
         np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{0.0}"), xx.cpu())
         
         seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=K).reshape(B,H,W,K)
         xx_t = []
         xx_t.append(xx)
         # return xx_t[-1].permute(0,3,1,2)
-        t_span = torch.linspace(0, 1, self.hyperparams.num_integration_steps, device = self.device)
+        t_span = torch.linspace(0, self.hyperparams.t_max, self.hyperparams.num_integration_steps, device = self.device)
         # for tt in t_span:
         #     samples_tt = torch.ones(B, device=self.device)*tt
         #     u_t = self.model(xx, samples_tt)
@@ -442,14 +495,7 @@ class gaussianModule_celoss(GeneralModule):
             samples_ss = torch.ones(B, device=self.device)*ss
 
             logits = self.model(xx, samples_ss)
-            flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
-            sigma_t = 1-(1-self.hyperparams.sigma_min)*tt
-            xx_1 = xx_t[0]*sigma_t
-            xx_1 += tt*seq_onehot
-    
-            ut = (xx_1 - xx)/(tt-ss)
-            xx = xx + flow_probs*ut*(tt-ss)
-
+            xx = torch.nn.functional.softmax(logits.permute(0,2,3,1), -1)
             xx_t.append(xx)
             np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{tt}"), xx.cpu())
         return xx_t[-1]
@@ -472,7 +518,7 @@ class gaussianModule_celoss(GeneralModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hyperparams.lr)
-        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6)
+        # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6)
         return optimizer
 
     def plot_probability_path(self, t, xt):
