@@ -41,13 +41,19 @@ def sample_cond_vector_field_2d(hyperparams, seq, seq_t, seq_prev_onehot, seq_t_
     # ut = (seq_onehot - (1-hyperparams.sigma_min)*sample_x)/sigma_t[:,None,None,None]
 
     # random initiation of $x(t_0)$ is done in dataset.py
-    t = seq_t_prev
+    
     sigma_t = torch.rand(batchsize).to(seq.device).float()
-    sigma_t = sigma_t*(seq_t-seq_t_prev)
+    sigma_t = sigma_t*(seq_t-seq_t_prev)+hyperparams.t_min
+    t = (seq_t-sigma_t)
     sample_x = seq_prev_onehot*sigma_t[:,None,None,None] + t[:,None,None,None]*seq_onehot
     ut = (seq_onehot-sample_x)/sigma_t[:,None,None,None]
-
+    if torch.isnan(ut).any():
+        np.save(os.path.join("testdataset/nan", "sigma_t.npy"), sigma_t.detach().cpu().numpy())
+        np.save(os.path.join("testdataset/nan", "sample_x.npy"), sample_x.detach().cpu().numpy())
+        np.save(os.path.join("testdataset/nan", "seq_onehot.npy"), seq_onehot.detach().cpu().numpy())
+        raise Exception("Nan in ut")
     sample_x.requires_grad = False
+    t.requires_grad = False
     return sample_x, t, ut.float()
 
 
@@ -203,7 +209,21 @@ class gaussianModule(GeneralModule):
                 np.save("xt.npy", xt.detach().cpu().numpy())
                 np.save("ut.npy", ut.detach().cpu().numpy())
                 np.save("t.npy", t.detach().cpu().numpy())
-
+        if torch.isnan(ut).any():
+            np.save(os.path.join("testdataset/nan", "seq.npy"), seq.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "seq_prev_onehot.npy"), seq_prev_onehot.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "seq_t.npy"), seq_t.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "seq_t_prev.npy"), seq_t_prev.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "xt.npy"), xt.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "ut.npy"), ut.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "t.npy"), t.detach().cpu().numpy())
+            raise Exception("NaN in ut")
+        if torch.isnan(xt).any():
+            raise Exception("NaN in xt")
+        if torch.isinf(ut).any():
+            raise Exception("Inf in ut")
+        if torch.isinf(xt).any():
+            raise Exception("Inf in xt")
         shape = seq.shape
 
         ut_model = self.model(xt, t, cls=None)
@@ -217,7 +237,7 @@ class gaussianModule(GeneralModule):
         if self.stage == "val":
             np.save("losses.npy", losses.detach().cpu().numpy())
             # self.lg("FMloss", losses)
-            raise RuntimeError
+            print("WARNNING:: Dumped seq.npy, seq_t.npy, seq_t_prev.npy, xt.npy, ut.npy, t.npy, loss.npy to ./ directory!")
         if self.hyperparams.mode == "focal":
             norm_xt = torch.nn.functional.softmax(xt, dim=-1)
             fl = ((torch.pow(norm_xt, self.hyperparams.gamma_focal).sum(-1)).reshape(B, -1))*torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
@@ -238,8 +258,8 @@ class gaussianModule(GeneralModule):
                 logits_pred = self.gaussian_flow_inference_2d(seq)
 
             seq_pred = torch.argmax(logits_pred, dim=-1)
-            np.save(os.path.join(os.environ["work_dir"], f"seq_val_step{self.trainer.global_step}"), seq_pred.cpu())
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}"), logits_pred.cpu())
+            np.save(os.path.join(os.environ["work_dir"], f"seq_val"), seq_pred.cpu())
+            np.save(os.path.join(os.environ["work_dir"], f"logits_val"), logits_pred.cpu())
         return losses.mean()
     
     def training_step(self, batch, batch_idx):
@@ -262,30 +282,30 @@ class gaussianModule(GeneralModule):
         B, H, W = seq.shape
         K = self.model.alphabet_size
         xx = torch.normal(0, 1*self.hyperparams.time0_scale, size=(B,H,W,K), device=self.device)
-        np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{0.0}"), xx.cpu())
+        np.save(os.path.join(os.environ["work_dir"], f"logits_val_inttime{0.0}"), xx.cpu())
         seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=K).reshape(B,H,W,K)
         xx_t = []
         xx_t.append(xx)
 
         t_span = torch.linspace(self.hyperparams.t_min, self.hyperparams.t_max, self.hyperparams.num_integration_steps, device = self.device)
-        # for i, (ss, tt) in enumerate(zip(t_span[:-1], t_span[1:])):
-        #     samples_ss = torch.ones(B, device=self.device)*ss
-        # 
-        #     logits = self.model(xx, samples_ss)
-        #     flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1), -1)
-        #     sigma_t = 1-(1-self.hyperparams.sigma_min)*tt
-        #     xx_1 = xx_t[0]*sigma_t
-        #     xx_1 += tt*seq_onehot
-        # 
-        #     ut = (xx_1 - xx)/(tt-ss)
-        #     xx = xx + flow_probs*ut*(tt-ss)
+        # for tt in t_span:
+        #     samples_tt = torch.ones(B, device=self.device)*tt
+        #     u_t = self.model(xx, samples_tt)
+        #     xx = xx + u_t.permute(0,2,3,1)*1./self.hyperparams.num_integration_steps
         for i, (ss, tt) in enumerate(zip(t_span[:-1], t_span[1:])):
             samples_ss = torch.ones(B, device=self.device)*ss
             u_t = self.model(xx, samples_ss)
+            if torch.isnan(u_t).any():
+                raise Exception("NaN in u_t")
+            if torch.isinf(u_t).any():
+                raise Exception("Inf in u_t")
             xx = xx + u_t.permute(0,2,3,1)*(tt-ss)
-
+            if torch.isnan(xx).any():
+                raise Exception("NaN in xx")
+            if torch.isinf(xx).any():
+                raise Exception("Inf in xx")
             xx_t.append(xx)
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{tt}"), xx.cpu())
+            np.save(os.path.join(os.environ["work_dir"], f"logits_val_inttime{tt}"), xx.cpu())
         return xx_t[-1]
 
     @torch.no_grad()

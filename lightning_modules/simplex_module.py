@@ -33,8 +33,9 @@ def sample_cond_prob_path_2d(hyperparams, seq, seq_t, seq_prev_onehot, seq_t_pre
     batchsize = seq.shape[0]
     seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=channels).reshape(*shape, channels)
 
-    t = seq_t_prev
-
+    sigma_t = torch.rand(batchsize).to(seq.device).float()
+    sigma_t = sigma_t*(seq_t-seq_t_prev)+hyperparams.t_min
+    t = (seq_t_prev+sigma_t)
     alphas = torch.ones(*shape, channels, device=seq.device)
     alphas = alphas + t[:, None, None, None]*seq_prev_onehot
     xt = torch.distributions.Dirichlet(alphas).sample()
@@ -203,6 +204,7 @@ class simplexModule(GeneralModule):
             if self.stage == "val":
                 np.save("t.npy", t.detach().cpu().numpy())
 
+
         shape = seq.shape
             
         # self.plot_probability_path(t, xt)
@@ -255,7 +257,7 @@ class simplexModule(GeneralModule):
             seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=self.model.alphabet_size).reshape(*shape, self.model.alphabet_size).float()
             self.RCL.buffer2rc_trajs(seq_onehot)
             if "RC-t" in self.hyperparams.mode:
-                tgrid = torch.linspace(0, self.hyperparams.alpha_min_kBT, (self.hyperparams.tgrid_num_alpha)).to(seq.device)
+                tgrid = torch.linspace(0, self.hyperparams.t_max, (self.hyperparams.tgrid_num_alpha)).to(seq.device)
                 _meshgrid = torch.meshgrid(xgrid, tgrid)
                 meshgrid = torch.stack([_meshgrid[0].ravel(), _meshgrid[1].ravel()]).T
                 meshgrid = meshgrid.reshape(37, self.hyperparams.tgrid_num_alpha, 2)

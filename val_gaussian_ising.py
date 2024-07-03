@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6/finetune2"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6_c/pretrain3/"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 
 dataset_dir = "ising-latt6x6-anneal"
@@ -67,19 +67,18 @@ class dataset_params():
         self.toy_seq_dim = toy_seq_dim
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
-        self.t_max = 1
+        self.t_max = 10
         self.t_min = 0.0001
-        self.dataset_files = ["buffer_enhancelowT_ordered.npy", "t_enhancelowT_ordered.npy"]
+        self.dataset_files = ["buffer_enhancelowTmaxT_ordered_dt0.1.npy", "t_enhancelowTmaxT_ordered_dt0.1.npy"]
+        self.subset = False
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
 from utils.dataset import AlCuDataset, IsingDataset
 # dparams.dataset_dir = dataset_dir
 dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# train_ds = AlCuDataset(dparams)
 train_ds = IsingDataset(dparams)
 dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
 val_ds = IsingDataset(dparams)
 
 if stage == "train":
@@ -115,15 +114,9 @@ class Hyperparams():
         self.model = model
         self.mode = mode
         self.prefactor_CE = 1.
-        # self.alpha_min_kBT = 1
+        self.t_max = 10.
+        self.t_min = 0.0001
 
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2, time0_scale = 1.0):
-        self.cls_expanded_simplex = cls_expanded_simplex
-        self.time_scale = time_scale
-        self.alpha_max = 8
-        self.num_integration_steps = 20
-        self.flow_temp = 1.
-        self.allow_nan_cfactor = True
 
     def gaussian_params(self, time_scale=2, time0_scale = 1):
         self.sigma_min = 0.0001
@@ -131,7 +124,8 @@ class Hyperparams():
         self.time0_scale = time0_scale
         self.num_integration_steps = 20
 
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D")
+loss_mode = None
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, lr=5e-6, dropout=0.2, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.gaussian_params()
 
 from lightning_modules.gaussian_module import gaussianModule

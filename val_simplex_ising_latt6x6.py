@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-dir-ising/kBT1-3_latt6x6/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6_d/"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-anneal"
 
@@ -18,19 +18,6 @@ seq_dim = (6, 6)
 ckpt = None
 import glob
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
-if stage == "train":
-    batch_size = 1024
-    if ckpt is not None: 
-        print("Starting from ckpt:: ", ckpt)
-elif stage == "val":
-    batch_size = 8192*4
-    # batch_size = 1024*2
-    if ckpt is None: 
-        raise Exception("ERROR:: ckpt not initiated")
-    print("Validating with ckpt::", ckpt)
-else:
-    raise Exception("Unrecognized stage")
-
 
 num_workers = 0
 max_steps = 100000
@@ -60,10 +47,10 @@ trainer = pl.Trainer(
         ModelCheckpoint(
             dirpath=os.environ["MODEL_DIR"],
             filename='model-{epoch:02d}-{train_loss:.2f}',
-            save_top_k=3,  # Save the top 3 models
+            save_top_k=-1,  # Save the top 3 models
             monitor='train_loss',  # Monitor validation loss
             mode='min',  # Minimize validation loss
-            every_n_train_steps=1000,  # Checkpoint every 1000 training steps
+            every_n_train_steps=5000,  # Checkpoint every 1000 training steps
         )
     ],
     check_val_every_n_epoch=check_val_every_n_epoch,
@@ -79,20 +66,33 @@ class dataset_params():
         self.toy_seq_dim = toy_seq_dim
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
-        self.cls_ckpt = None
         self.t_max = 10
-        self.dataset_files = ["buffer_kBT1-3.npy", "t_kBT1-3.npy"]
+        self.t_min = 0.0001
+        self.dataset_files = ["buffer_enhancelowTmaxT_ordered_dt0.1.npy", "t_enhancelowTmaxT_ordered_dt0.1.npy"]
+        self.basis="simplex"
+        self.subset = False
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
 from utils.dataset import AlCuDataset, IsingDataset
 # dparams.dataset_dir = dataset_dir
 dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# train_ds = AlCuDataset(dparams)
 train_ds = IsingDataset(dparams)
 dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
 val_ds = IsingDataset(dparams)
+
+if stage == "train":
+    batch_size = 1024
+    if ckpt is not None: 
+        print("Starting from ckpt:: ", ckpt)
+elif stage == "val":
+    batch_size = val_ds.all_t.shape[0]
+    # batch_size = 2048
+    if ckpt is None: 
+        raise Exception("ERROR:: ckpt not initiated")
+    print("Validating with ckpt::", ckpt)
+else:
+    raise Exception("Unrecognized stage")
 
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers, drop_last=True)
@@ -125,7 +125,9 @@ class Hyperparams():
         if self.classifier:
             self.prefactor_E = 1.
 
-        self.alpha_min_kBT= 10
+        self.t_max = 10.
+        self.t_min = 0.0001
+
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
         self.cls_expanded_simplex = cls_expanded_simplex

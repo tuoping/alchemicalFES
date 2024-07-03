@@ -32,7 +32,7 @@ else:
     raise Exception("Unrecognized stage")
 num_workers = 0
 max_steps = 40000000
-max_epochs = 240
+max_epochs = 1130
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
@@ -53,9 +53,9 @@ class dataset_params():
         self.cls_ckpt = None
         self.t_max = 10
         self.t_min = 0.0001
-        self.dataset_files = ["buffer_enhancelowT_ordered.npy", "t_enhancelowT_ordered.npy"]
-        self.subset = True
-        self.subset_size = 100000
+        self.dataset_files = ["buffer_enhancelowTmaxT_ordered_dt0.1.npy", "t_enhancelowTmaxT_ordered_dt0.1.npy"]
+        self.basis = "simplex"
+        self.subset = False
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
@@ -87,13 +87,13 @@ class Hyperparams():
         self.mode = mode
         if mode is not None and "RC" in "".join(mode):
             self.prefactor_RC = 1.
-            self.tgrid_num_alpha=20
-            self.tgrid_bandwidth=2.0
+            self.tgrid_num_alpha=40
+            self.tgrid_bandwidth=0.5
         if mode is not None and "multinomial" in mode:
             self.prefactor_M = 1.
         if mode is not None and "Energy" in mode:
             self.prefactor_E = 1.
-        self.prefactor_CE = 0.05
+        self.prefactor_CE = 0.5
         self.classifier = False
         if self.classifier:
             self.prefactor_E = 1.
@@ -110,7 +110,7 @@ class Hyperparams():
         self.flow_temp = 1.
         self.allow_nan_cfactor = True
 
-loss_mode = None
+loss_mode = ["RC-t"]
 print("extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, lr=5e-4, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)

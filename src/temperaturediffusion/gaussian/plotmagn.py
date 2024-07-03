@@ -5,9 +5,10 @@ import os,sys
 import time
 from copy import deepcopy
 
-alpha_min_kBT = 1
+num_integration_steps = 20
+t_max = 10
 seq_dim = (6,6)
-num_batches=5
+num_batches=1
 epoch1=int(sys.argv[1])
 T1=1.0
 
@@ -112,12 +113,12 @@ def spin_structure_factor(seq):
 import glob
 def loadmodelprediction(_dirname, epoch, num_batches, fileheader="logits"):
     dirname = _dirname+"/epoch%02d_sample%d"%(epoch,1)
-    f_logits_t = sorted(glob.glob(os.path.join(dirname, fileheader+"_val_step0_inttime*")))
+    f_logits_t = sorted(glob.glob(os.path.join(dirname, fileheader+"_val_inttime*")))
     print(">>> Reading model predictions from: ", dirname)
     print(f_logits_t)
 
     logits_t = [np.load(f).astype(np.float16) for f in f_logits_t]
-    t = [float(x.replace(os.path.join(dirname, fileheader+"_val_step0_inttime"), "").replace(".npy","")) for x in f_logits_t]
+    t = [float(x.replace(os.path.join(dirname, fileheader+"_val_inttime"), "").replace(".npy","")) for x in f_logits_t]
     print("Integration time=",t)
 
     for ii in range(num_batches):
@@ -125,7 +126,7 @@ def loadmodelprediction(_dirname, epoch, num_batches, fileheader="logits"):
             print("        ", len(logits_t), [logits_t[i].shape for i in range(len(logits_t))])
             continue
         dirname = _dirname+"/epoch%02d_sample%d"%(epoch,ii+1)
-        _f_logits_t = sorted(glob.glob(os.path.join(dirname, fileheader+"_val_step0_inttime*")))
+        _f_logits_t = sorted(glob.glob(os.path.join(dirname, fileheader+"_val_inttime*")))
         _logits_t = [np.load(f).astype(np.float16) for f in _f_logits_t]
         print("        ", ii+1,len(_logits_t), [_logits_t[i].shape for i in range(len(_f_logits_t))])
         logits_t = [np.concatenate([logits_t[i], _logits_t[i]], axis=0) for i in range(len(_f_logits_t))]
@@ -138,6 +139,12 @@ def logits2seq(logits_t):
         seq[np.where(seq==0)] = -1
         seq_t.append(seq.reshape(-1,*seq_dim))
     return seq_t
+
+def logits2seq_soft(logits):
+    assert logits.shape[-1] == 2
+    B = logits.shape[0]
+    seq = torch.sum(logits*torch.tensor([-1,1])[None,None,None,:], dim=-1)
+    return seq.numpy()
 
 def histvar(seq, varfunc, bins):
     var = varfunc(seq)
@@ -313,7 +320,7 @@ def run_statistics_xt(T, epoch):
     s_time = e_time
 
     ### loading model predictions at T and calculating the potential energy and its statistics.
-    line_color = [plt.colormaps["gnuplot"](float(20-1-i)/float(20)) for i in range(20)]
+    line_color = [plt.colormaps["gnuplot"](float(num_integration_steps-1-i)/float(num_integration_steps)) for i in range(num_integration_steps)]
     plt.figure()
     for ii in range(0, len(seq_t), 2):
         ofile_Prob = open("xt-PROB-MAGN-kBT%.2f-t%d.dat"%(T,ii), "wb")
@@ -345,17 +352,21 @@ def run_statistics_xt(T, epoch):
     e_time = time.time()
     print("Time for processing:: ", e_time-s_time)
 
-def run_statistics(T, epoch):
+
+def run_statistics(T, epoch, mode="hard"):
     ### load model predictions
     s_time = time.time()
     logits_t, t_integration = loadmodelprediction(val_dirname[T], epoch, num_batches)
-    seq_t = logits2seq(logits_t)
+    if mode== "soft":
+        seq_t = logits2seq_soft(torch.from_numpy(np.array(logits_t)))
+    else:
+        seq_t = logits2seq(logits_t)
     e_time = time.time()
     print("Time for loading predictions of model(kBT=%.01f):: "%T, e_time-s_time)
     s_time = e_time
 
     ### loading model predictions at T and calculating the potential energy and its statistics.
-    line_color = [plt.colormaps["gnuplot"](float(20-1-i)/float(20)) for i in range(20)]
+    line_color = [plt.colormaps["gnuplot"](float(num_integration_steps-1-i)/float(num_integration_steps)) for i in range(num_integration_steps)]
     plt.figure()
     for ii in range(0, len(seq_t), 2):
         ofile_Prob = open("PROB-MAGN-kBT%.2f-t%d.dat"%(T,ii), "wb")
@@ -367,7 +378,7 @@ def run_statistics(T, epoch):
         np.savetxt(ofile_Prob, P_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
         np.savetxt(ofile_F, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
         np.savetxt(ofile_F, F_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
-        plt.scatter(bin_centers_E[idxF_E], F_E, label="$k_BT=%f$"%(alpha_min_kBT/(t_integration[ii]+1e-5)), c=line_color[ii])
+        plt.scatter(bin_centers_E[idxF_E], F_E, label="$k_BT=%f$"%(t_max/(t_integration[ii]+1e-5)), c=line_color[ii])
         # if T in Reference_dict:
         #     plt.plot(Reference_dict[T][0], Reference_dict[T][1], c="green", label="Ground truth")
         
@@ -497,8 +508,6 @@ def plot_kBT_expectation(T3):
 '''
 
 
-# run_statistics_xt(T1, epoch1)
 run_statistics(T1, epoch1)
-# run_RC_val(T1, epoch1)
 
 print("Total wall time:: ", time.time()-global_s_time)
