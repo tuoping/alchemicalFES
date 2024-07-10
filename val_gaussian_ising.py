@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.0/kernel3x3_celoss_timeembed/"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.0/kernel3x3_timeembed/"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-T4.0"
 

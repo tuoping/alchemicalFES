@@ -85,7 +85,10 @@ class gaussianModule(GeneralModule):
             losses = torch.norm((ut_model.permute(0,2,3,4,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
         elif self.hyperparams.model == "CNN2D":
             losses = torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
-
+            if self.stage == "val":
+                np.save("t.npy", t.detach().cpu().numpy())
+                np.save("ut.npy", ut.detach().cpu().numpy())
+                np.save("losses.npy", losses.detach().cpu().numpy())
 
         if self.hyperparams.mode == "focal":
             norm_xt = torch.nn.functional.softmax(xt, dim=-1)
@@ -145,7 +148,7 @@ class gaussianModule(GeneralModule):
             xx = xx + u_t.permute(0,2,3,1)*1./self.hyperparams.num_integration_steps
 
             xx_t.append(xx)
-            np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"(tt)), xx.cpu())
+            np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"%(tt)), xx.detach().cpu().numpy())
         return xx_t[-1]
 
     @torch.no_grad()

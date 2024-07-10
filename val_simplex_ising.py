@@ -8,14 +8,14 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T6.0/kernel3x3_timeembed/finetune9/"
-os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline/epoch{sys.argv[1]}_sample{sys.argv[2]}")
-dataset_dir = "ising-latt6x6-T6.0"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T3.2/kernel3x3_timeembed/"
+os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
+dataset_dir = "ising-latt6x6-T4.0"
 
 stage = "val"
 channels = 2
-seq_len = 4*4
-seq_dim = (4, 4)
+seq_len = 6*6
+seq_dim = (6, 6)
 ckpt = None
 import glob
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
@@ -24,7 +24,7 @@ if stage == "train":
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
-    batch_size = 8192*4
+    batch_size = 8192*2
     if ckpt is None: 
         raise Exception("ERROR:: ckpt not initiated")
     print("Validating with ckpt::", ckpt)
@@ -111,19 +111,23 @@ class Hyperparams():
         self.channels = channels
         self.model = model
         self.mode = mode
+        self.gamma_focal = 2.
+        self.prefactor_RC = 0.05
+        self.prefactor_CE = 1.
 
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2, time0_scale = 1):
+    def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
         self.cls_expanded_simplex = cls_expanded_simplex
         self.time_scale = time_scale
         self.alpha_max = 8
         self.num_integration_steps = 20
         self.flow_temp = 1.
         self.allow_nan_cfactor = True
-        self.time0_scale = time0_scale
 
-hparams = Hyperparams(clean_data=True, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D")
+loss_mode = "RC-focal"
+print("extra loss::", loss_mode)
+
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.simplex_params()
-
 
 from lightning_modules.simplex_module import simplexModule
 model = simplexModule(channels, num_cls=2, hyperparams=hparams)
