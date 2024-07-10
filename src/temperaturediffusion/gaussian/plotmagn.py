@@ -378,7 +378,7 @@ def run_statistics(T, epoch, mode="hard"):
         np.savetxt(ofile_Prob, P_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
         np.savetxt(ofile_F, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
         np.savetxt(ofile_F, F_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
-        plt.scatter(bin_centers_E[idxF_E], F_E, label="$k_BT=%f$"%(t_max/(t_integration[ii]+1e-5)), c=line_color[ii])
+        plt.plot(bin_centers_E[idxF_E], F_E, label="$k_BT=%f$"%(t_max/(t_integration[ii]+1e-5)), c=line_color[ii])
         # if T in Reference_dict:
         #     plt.plot(Reference_dict[T][0], Reference_dict[T][1], c="green", label="Ground truth")
         

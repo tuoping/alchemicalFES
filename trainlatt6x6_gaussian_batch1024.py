@@ -52,8 +52,10 @@ class dataset_params():
         self.dataset_dir = dataset_dir
         self.t_max = 10.
         self.t_min = 0.0001
-        self.dataset_files = ["buffer_enhancelowT_ordered.npy", "t_enhancelowT_ordered.npy"]
-        self.subset = False
+        self.dataset_files = ["buffer_enhancelowTT95_skipPhase2_ordered.npy", "t_enhancelowTT95_skipPhase2_ordered.npy"]
+        self.basis = "gaussian"
+        self.subset = True
+        self.subset_size = 500000
 
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
@@ -101,7 +103,7 @@ class Hyperparams():
         self.num_integration_steps = 20
 
 loss_mode = None
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, lr=5e-6, dropout=0.2, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, lr=5e-6, dropout=0.0, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.gaussian_params()
 from lightning_modules.gaussian_module import gaussianModule
 model = gaussianModule(channels, num_cls=1, hyperparams=hparams)

@@ -20,7 +20,7 @@ ckpt = None
 import glob
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
 if stage == "train":
-    batch_size = 1024
+    batch_size = 2048
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
@@ -32,7 +32,7 @@ else:
     raise Exception("Unrecognized stage")
 num_workers = 0
 max_steps = 40000000
-max_epochs = 1130
+max_epochs = 1190
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
@@ -93,7 +93,7 @@ class Hyperparams():
             self.prefactor_M = 1.
         if mode is not None and "Energy" in mode:
             self.prefactor_E = 1.
-        self.prefactor_CE = 0.5
+        self.prefactor_CE = 0.05
         self.classifier = False
         if self.classifier:
             self.prefactor_E = 1.

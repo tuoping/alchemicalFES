@@ -33,15 +33,15 @@ def sample_cond_vector_field_2d(hyperparams, seq, seq_t, seq_prev_onehot, seq_t_
     shape = seq.shape
     batchsize = seq.shape[0]
     seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=channels).reshape(*shape, channels)
-    # sample_x = torch.randn(size=seq_onehot.shape, device=seq.device)
-    # t = 1 - (torch.from_numpy(scipy.stats.expon().rvs(size=batchsize)*hyperparams.time_scale).to(seq.device).float())
-    # sigma_t = 1-(1-hyperparams.sigma_min)*t
-    # sample_x *= sigma_t[:,None,None,None]
-    # sample_x += t[:,None,None,None]*seq_onehot
-    # ut = (seq_onehot - (1-hyperparams.sigma_min)*sample_x)/sigma_t[:,None,None,None]
+
+    sample_x_full = torch.randn(size=seq_onehot.shape, device=seq.device)
+    t_full = (1 - (torch.from_numpy(scipy.stats.expon().rvs(size=batchsize)*0.5).to(seq.device).float()))*hyperparams.t_max
+    sigma_t_full = hyperparams.t_max - (hyperparams.t_max-hyperparams.t_min)*t_full
+    sample_x_full *= sigma_t_full[:,None,None,None]
+    sample_x_full += t_full[:,None,None,None]*seq_onehot
+    ut_full = (seq_onehot - sample_x_full)/sigma_t_full[:,None,None,None]
 
     # random initiation of $x(t_0)$ is done in dataset.py
-    
     sigma_t = torch.rand(batchsize).to(seq.device).float()
     sigma_t = sigma_t*(seq_t-seq_t_prev)+hyperparams.t_min
     t = (seq_t-sigma_t)
@@ -52,6 +52,9 @@ def sample_cond_vector_field_2d(hyperparams, seq, seq_t, seq_prev_onehot, seq_t_
         np.save(os.path.join("testdataset/nan", "sample_x.npy"), sample_x.detach().cpu().numpy())
         np.save(os.path.join("testdataset/nan", "seq_onehot.npy"), seq_onehot.detach().cpu().numpy())
         raise Exception("Nan in ut")
+    ut = torch.concat([ut_full, ut], axis=0)
+    sample_x = torch.concat([sample_x_full, sample_x], axis=0)
+    t = torch.concat([t_full, t], axis=0)
     sample_x.requires_grad = False
     t.requires_grad = False
     return sample_x, t, ut.float()
@@ -195,6 +198,7 @@ class gaussianModule(GeneralModule):
         seq_t_prev = torch.cat([seq_t_prev, seq_t_prev])
         if self.stage == "val":
             np.save("seq.npy", seq.detach().cpu().numpy())
+            np.save("seq_prev.npy", seq_prev_onehot.detach().cpu().numpy())
             np.save("seq_t.npy", seq_t.detach().cpu().numpy())
             np.save("seq_t_prev.npy", seq_t_prev.detach().cpu().numpy())
 
@@ -227,6 +231,10 @@ class gaussianModule(GeneralModule):
         shape = seq.shape
 
         ut_model = self.model(xt, t, cls=None)
+        if torch.isnan(ut_model).any():
+            np.save(os.path.join("testdataset/nan", "xt.npy"), xt.detach().cpu().numpy())
+            np.save(os.path.join("testdataset/nan", "t.npy"), t.detach().cpu().numpy())
+            raise Exception("NaN in ut_model")
         if self.hyperparams.model == "CNN3D":
             losses = torch.norm((ut_model.permute(0,2,3,4,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
         elif self.hyperparams.model == "CNN2D":
@@ -287,7 +295,7 @@ class gaussianModule(GeneralModule):
         xx_t = []
         xx_t.append(xx)
 
-        t_span = torch.linspace(self.hyperparams.t_min, self.hyperparams.t_max, self.hyperparams.num_integration_steps, device = self.device)
+        t_span = torch.linspace(0, self.hyperparams.t_max, self.hyperparams.num_integration_steps, device = self.device)
         # for tt in t_span:
         #     samples_tt = torch.ones(B, device=self.device)*tt
         #     u_t = self.model(xx, samples_tt)
@@ -296,14 +304,14 @@ class gaussianModule(GeneralModule):
             samples_ss = torch.ones(B, device=self.device)*ss
             u_t = self.model(xx, samples_ss)
             if torch.isnan(u_t).any():
-                raise Exception("NaN in u_t")
+                raise Exception("NaN in u_t at diffusion step %d"%i)
             if torch.isinf(u_t).any():
-                raise Exception("Inf in u_t")
+                raise Exception("Inf in u_t at diffusion step %d"%i)
             xx = xx + u_t.permute(0,2,3,1)*(tt-ss)
             if torch.isnan(xx).any():
-                raise Exception("NaN in xx")
+                raise Exception("NaN in xx at diffusion step %d"%i)
             if torch.isinf(xx).any():
-                raise Exception("Inf in xx")
+                raise Exception("Inf in xx at diffusion step %d"%i)
             xx_t.append(xx)
             np.save(os.path.join(os.environ["work_dir"], f"logits_val_inttime{tt}"), xx.cpu())
         return xx_t[-1]
@@ -325,7 +333,7 @@ class gaussianModule(GeneralModule):
         return xx_t[-1].permute(0,4,1,2,3)
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=self.hyperparams.lr)
+        optimizer = optim.Adam(self.parameters(), lr=self.hyperparams.lr, weight_decay=1e-5)
         # scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-6)
         return optimizer
 

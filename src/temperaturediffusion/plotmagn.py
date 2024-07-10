@@ -124,7 +124,7 @@ def loadmodelprediction(_dirname, epoch, num_batches, fileheader="logits"):
         if ii == 0:
             print("        ", len(logits_t), [logits_t[i].shape for i in range(len(logits_t))])
             continue
-        dirname = _dirname+"/epoch%d_sample%d"%(epoch,ii+1)
+        dirname = _dirname+"/epoch%02d_sample%d"%(epoch,ii+1)
         _f_logits_t = sorted(glob.glob(os.path.join(dirname, fileheader+"_val_inttime*")))
         _logits_t = [np.load(f).astype(np.float16) for f in _f_logits_t]
         print("        ", ii+1,len(_logits_t), [_logits_t[i].shape for i in range(len(_f_logits_t))])

@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6_c/pretrain3/"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6_c"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 
 dataset_dir = "ising-latt6x6-anneal"
@@ -69,8 +69,10 @@ class dataset_params():
         self.dataset_dir = dataset_dir
         self.t_max = 10
         self.t_min = 0.0001
-        self.dataset_files = ["buffer_enhancelowTmaxT_ordered_dt0.1.npy", "t_enhancelowTmaxT_ordered_dt0.1.npy"]
-        self.subset = False
+        self.dataset_files = ["buffer_enhancelowTT95_skipPhase2_ordered.npy", "t_enhancelowTT95_skipPhase2_ordered.npy"]
+        self.basis = "gaussian"
+        self.subset = True
+        self.subset_size = 50000
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
