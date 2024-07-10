@@ -142,9 +142,10 @@ class simplexModule(GeneralModule):
             logits = (logits.permute(0,2,3,1)).reshape(-1, self.model.alphabet_size)
         # logits.retain_grad()
         
+        CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
+        self.lg("CELoss", CELoss)
+        losses = self.hyperparams.prefactor_CE* CELoss
         
-        losses = self.hyperparams.prefactor_CE* torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
-        self.lg("CELoss", losses)
         if self.hyperparams.mode is not None and "RC" in self.hyperparams.mode:
             xgrid = torch.linspace(-36, 36, 36+1, device=logits.device)
             seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=self.model.alphabet_size).reshape(*shape, self.model.alphabet_size)
@@ -155,18 +156,20 @@ class simplexModule(GeneralModule):
             self.RCL.buffer2rc_trajs(norm_logits)
             if self.stage == "val":
                 rc_logits= self.RCL.kde(xgrid, 1., dump_hist=False)
-                # rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
-                rc_loss = torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
+                if "focal" in self.hyperparams.mode:
+                    rc_loss = (1-rc_logits)**2*(-rc_seq*torch.log(rc_logits+1e-12)).reshape(1,-1)
+                else:
+                    rc_loss = rc_loss = (-rc_seq*torch.log(rc_logits+1e-12)).reshape(1,-1)
                 np.save(os.path.join(os.environ["work_dir"], f"logits_train_step{self.trainer.global_step}"), norm_logits.cpu())
             else:
                 rc_logits= self.RCL.kde(xgrid, 1.)
                 if "focal" in self.hyperparams.mode:
-                    # rc_loss = (1-rc_logits)**2*torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
-                    rc_loss = (1-rc_logits)**2*torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
+                    # rc_loss = (1-rc_logits)**2*(-rc_seq*torch.log(rc_logits+1e-12)).reshape(1,-1)
+                    rc_loss = (1-rc_logits)**2*torch.nn.functional.cross_entropy(rc_logits.reshape([1,-1]), rc_seq.reshape([1,-1]), reduction='none')
                 else:
-                    # rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape(1, -1), rc_seq.reshape(1, -1), reduction="none")
-                    rc_loss = torch.nn.functional.kl_div(rc_logits.reshape(1, *xgrid.shape), rc_seq.reshape(1, *xgrid.shape), reduction='none', log_target=False)
-            self.lg("RCLoss", rc_loss*self.hyperparams.prefactor_RC)
+                    # rc_loss = rc_loss = (-rc_seq*torch.log(rc_logits+1e-12)).reshape(1,-1)
+                    rc_loss = torch.nn.functional.cross_entropy(rc_logits.reshape([1,-1]), rc_seq.reshape([1,-1]), reduction='none')
+            self.lg("RCLoss", rc_loss)
             # rc_loss.sum().backward()
             # print(logits.grad)
             losses += rc_loss.mean()*self.hyperparams.prefactor_RC
@@ -250,7 +253,7 @@ class simplexModule(GeneralModule):
 
             xt = xt + flow * (t - s)
             if not torch.allclose((xt.reshape(B,-1,K)).sum(2), torch.ones((B, H*W), device=self.device), atol=1e-4) or not (xt >= 0).all():
-                print(f'WARNING: xt.min(): {xt.min()}. Some values of xt do not lie on the simplex. There are we are {(xt<0).sum()} negative values in xt of shape {xt.shape} that are negative. We are projecting them onto the simplex.')
+                print(f'WARNING@time{s}: xt.min(): {xt.min()}. Some values of xt do not lie on the simplex. There are we are {(xt<0).sum()} negative values in xt of shape {xt.shape} that are negative. We are projecting them onto the simplex.')
                 xt = simplex_proj(xt.reshape(B,-1)).reshape(B,H,W,K)
             np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{t}"), xt.cpu().to(torch.float16))
                

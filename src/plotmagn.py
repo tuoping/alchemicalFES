@@ -9,8 +9,8 @@ from copy import deepcopy
 seq_dim = (6,6)
 num_batches=1
 epoch1=int(sys.argv[1])
-epoch2=174
-T1=4.0
+epoch2=170
+T1=2.2
 T2=6.0
 
 val_dirname  = {
@@ -461,9 +461,9 @@ def plot_kBT_expectation(T3):
 '''
 
 
-# run_statistics(T1, epoch1)
+run_statistics(T1, epoch1)
 # run_statistics(T2, epoch2)
-run_interpolate_DOS()
-run_interpolate_FES(T1)
+# run_interpolate_DOS()
+# run_interpolate_FES(T1)
 
 print("Total wall time:: ", time.time()-global_s_time)
