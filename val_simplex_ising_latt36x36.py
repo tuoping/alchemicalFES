@@ -8,14 +8,14 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed/"
-os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt12x12/epoch{sys.argv[1]}_sample{sys.argv[2]}")
-dataset_dir = "ising-latt12x12-T4.0"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed/finetune14"
+os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt36x36/epoch{sys.argv[1]}_sample{sys.argv[2]}")
+dataset_dir = "ising-latt36x36-T4.0"
 
 stage = "val"
 channels = 2
-seq_len = 12*12
-seq_dim = (12, 12)
+seq_len = 36*36
+seq_dim = (36, 36)
 ckpt = None
 import glob
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
@@ -80,7 +80,6 @@ class dataset_params():
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
-        self.kBT=float(sys.argv[3])
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 

@@ -6,15 +6,15 @@ import time
 from copy import deepcopy
 
 seq_dim = (6,6)
-num_batches=36
-epoch1=152
+num_batches=18
+epoch1=99
 epoch2=152
-T1=4.0
+T1=1.8
 T2=6.0
 
 val_dirname  = {
-    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T1,*seq_dim),
-    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T2,*seq_dim),
+    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune14/val_baseline_latt%dx%d"%(T1,*seq_dim),
+    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune14/val_baseline_latt%dx%d"%(T2,*seq_dim),
 }
 ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
@@ -216,7 +216,7 @@ def run_statistics(T, epoch):
     # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Potential energy", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("F-E-kBT%.2f.png"%T, bbox_inches="tight")
 
     e_time = time.time()
@@ -247,9 +247,10 @@ def run_interpolate_DOS():
     plt.figure()
     plt.errorbar(bin_centers, DOS, yerr=errDOS, label="DOS", c="red")
     plt.errorbar(Prediction_dict_T1[T1][0], Prediction_dict_T1[T1][1], yerr=Prediction_dict_T1[T1][2], c="k", label="$k_BT=%2f$"%T1)
+    
     if T1 in Reference_dict:
         plt.plot(Reference_dict[T1][0], Reference_dict[T1][1], c="k")
-    plt.scatter(Prediction_dict_T2[T2][0], Prediction_dict_T2[T2][1], c="green", label="$k_BT=%2f$"%T2)
+    plt.errorbar(Prediction_dict_T2[T2][0], Prediction_dict_T2[T2][1], yerr=Prediction_dict_T2[T2][2],  c="green", label="$k_BT=%2f$"%T2)
     if T2 in Reference_dict:
         plt.plot(Reference_dict[T2][0], Reference_dict[T2][1], c="green")
 
@@ -257,7 +258,7 @@ def run_interpolate_DOS():
     plt.legend(fontsize=12)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Potential energy", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("DOS-E-interpolateT%.2fT%.2f.png"%(T1, T2), bbox_inches="tight")
 
 def run_interpolate_FES(T3):
@@ -271,13 +272,14 @@ def run_interpolate_FES(T3):
     assert len(idxDOS) == len(DOS[0])
 
     plt.figure()
-    line_color = [plt.colormaps["gnuplot"](float(i)/float(20)) for i in range(20)]
+    line_color = [plt.colormaps["gnuplot"](float(i)/float(80)) for i in range(80)]
     plt.errorbar(DOS[0], DOS[1], yerr=DOS[2], c="r")
     ofile_F = open("F-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3),"wb")
     np.savetxt(ofile_F, bin_centers.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS interpolated from kBT= %.2f %.2f"%(T1,T2))
     Expectation_E_list = []
-    for idx_jj,jj in enumerate(list(Reference_dict.keys())):
-        _F = (FES_T3[1][idxT3]-DOS[1][idxDOS])*T3/jj + DOS[1][idxDOS]
+    # for idx_jj,jj in enumerate(list(Reference_dict.keys())):
+    for idx_jj,jj in enumerate(np.arange(1,8,0.1)):
+        _F = (FES_T3[1][idxT3]-DOS[1])*T3/jj + DOS[1]
         Jac_F = np.array([T3/jj, 1-T3/jj])
         var_D = np.eye(2)[np.newaxis, :, :]*(np.stack([FES_T3[2][idxT3], DOS[2][idxDOS]], axis=1)**2)[:,:,np.newaxis]
         err_F = np.sqrt(np.einsum('baik,ckl->baicl', np.einsum('aij,bjk->baik', Jac_F[np.newaxis,np.newaxis,:], var_D), np.transpose(Jac_F[np.newaxis,np.newaxis,:], (0,2,1))).reshape(-1))
@@ -297,13 +299,14 @@ def run_interpolate_FES(T3):
             plt.plot(Reference_dict[jj][0], Reference_dict[jj][1], c="green")
             plt.errorbar(bin_centers, F, yerr=err_F, c="green", label="$k_BT=%.2f$"%jj) 
         else:
-            plt.plot(Reference_dict[jj][0], Reference_dict[jj][1], c=line_color[idx_jj])
+            if jj in Reference_dict.keys():
+                plt.plot(Reference_dict[jj][0], Reference_dict[jj][1], c=line_color[idx_jj])
             plt.errorbar(bin_centers, F, yerr=err_F, c=line_color[idx_jj], label="$k_BT=%.2f$"%jj)
 
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Potential energy", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("F-E-interpolateDOST%.2fT%.2fFT%.2f.png"%(T1,T2,T3), bbox_inches="tight")
 
     Expectation_E_list = np.array(Expectation_E_list)
@@ -320,25 +323,27 @@ def plot_statistics(T):
     # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Potential energy", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("F-E-kBT%.2f.png"%T, bbox_inches="tight")
 
 
 def plot_kBT_expectation(T3):
-    line_color = [plt.colormaps["gnuplot"](float(i)/float(20)) for i in range(20)]
     ### plot kBT-Expectation_E
     s_time = time.time()
     Expectation_E = np.loadtxt("Expectation-E-interpolateDOST%.2fT%.2fFT%.2f.dat"%(T1,T2,T3), skiprows=1)
     Expectation_E_REF = np.loadtxt(os.path.join(ref_dirname, "Expectation-E-REF.dat"), skiprows=1)
     plt.figure()
     idx_order_ref = np.argsort(Expectation_E_REF[:,0])
-    plt.plot(Expectation_E_REF[:,0][idx_order_ref], Expectation_E_REF[:,1][idx_order_ref], c="k")
-    # idx_select = np.where(np.abs(Expectation_E[:,1])>Expectation_E[:,2])[0]
-    idx_select = np.where(Expectation_E[:,2]<3)[0]
-    import bisect
-    idx_color = bisect.bisect_left(sorted(list(Reference_dict.keys())), T3)
-    plt.errorbar(Expectation_E[idx_select,0], Expectation_E[idx_select,1], yerr=Expectation_E[idx_select,2], c=line_color[idx_color])
-
+    plt.scatter(Expectation_E_REF[:,0][idx_order_ref], Expectation_E_REF[:,1][idx_order_ref], c="k")
+    # idx_select = np.where((np.abs(Expectation_E[:,0])>=min(T1,T2)) & (np.abs(Expectation_E[:,0])<=max(T1,T2)))[0]
+    idx_select = np.where((np.abs(Expectation_E[:,0])<=max(T1,T2)))[0]
+    # idx_select = np.arange(Expectation_E.shape[0])
+    if T3 < 3:
+        plt.errorbar(Expectation_E[idx_select,0], Expectation_E[idx_select,1], yerr=Expectation_E[idx_select,2], c="blue")
+    elif T3 > 4:
+        plt.scatter(Expectation_E[idx_select,0], Expectation_E[idx_select,1], yerr=Expectation_E[idx_select,2], c="m")
+    else:
+        plt.scatter(Expectation_E[idx_select,0], Expectation_E[idx_select,1], yerr=Expectation_E[idx_select,2], c="violet")
 
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("$k_BT$", fontdict={"size":14})

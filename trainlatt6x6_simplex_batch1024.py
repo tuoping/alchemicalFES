@@ -8,33 +8,34 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed/"
-os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt12x12/epoch{sys.argv[1]}_sample{sys.argv[2]}")
-dataset_dir = "ising-latt12x12-T4.0"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[2]}/kernel3x3_timeembed/finetune17/"
+os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
-stage = "val"
+dataset_dir = f"ising-latt6x6-T{sys.argv[2]}/"
+
+stage = "train"
+
 channels = 2
-seq_len = 12*12
-seq_dim = (12, 12)
+seq_len= 6*6
+seq_dim = (6,6)
 ckpt = None
 import glob
+print(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
-    batch_size = 8192*4
+    batch_size = 1000
     if ckpt is None: 
         raise Exception("ERROR:: ckpt not initiated")
     print("Validating with ckpt::", ckpt)
 else:
     raise Exception("Unrecognized stage")
-
-
 num_workers = 0
-max_steps = 100000
-max_epochs = 100000
+max_steps = 40000000
+max_epochs = 260
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
@@ -45,9 +46,85 @@ wandb = False
 check_val_every_n_epoch = None
 val_check_interval = None
 
+
+class dataset_params():
+    def __init__(self, toy_seq_len, toy_seq_dim, toy_simplex_dim, dataset_dir):
+        self.toy_seq_len = toy_seq_len
+        self.toy_seq_dim = toy_seq_dim
+        self.toy_simplex_dim = toy_simplex_dim
+        self.dataset_dir = dataset_dir
+        self.cls_ckpt = None
+        self.kBT=float(sys.argv[2])
+        
+dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
+
+from utils.dataset import AlCuDataset, IsingDataset
+dparams.dataset_dir = dataset_dir
+# train_ds = AlCuDataset(dparams)
+train_ds = IsingDataset(dparams)
+dparams.dataset_dir = os.path.join(dataset_dir, "val")
+# val_ds = AlCuDataset(dparams)
+# val_ds = IsingDataset(dparams)
+
+train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+val_loader = None
+# val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers)
+
+class Hyperparams():
+    def __init__(self, mode=None, hidden_dim=16, num_cnn_stacks=1, lr=5e-4, dropout=0.0, cls_free_guidance=False, clean_data=False, model="MLP"):
+        self.hidden_dim = hidden_dim
+        self.dropout = dropout
+        self.kernel_size = 3
+        self.padding = 1
+        self.cls_free_guidance = cls_free_guidance
+        self.clean_data = clean_data
+        self.num_cnn_stacks = num_cnn_stacks
+        self.lr = lr
+        self.wandb = False
+        self.seq_dim = seq_dim
+        self.channels = channels
+        self.model = model
+        self.mode = mode
+        self.gamma_focal = 2.
+        self.prefactor_RC = 1.
+        self.prefactor_CE = 0.05
+
+    def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
+        self.cls_expanded_simplex = cls_expanded_simplex
+        self.time_scale = time_scale
+        self.alpha_max = 8
+        self.num_integration_steps = 20
+        self.flow_temp = 1.
+        self.allow_nan_cfactor = True
+
+loss_mode = "E-weighted"
+print("extra loss::", loss_mode)
+
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
+hparams.simplex_params()
+
+from lightning_modules.simplex_module import simplexModule
+model = simplexModule(channels, num_cls=2, hyperparams=hparams)
+
+
+
+# import wandb
+# wandb.init(
+#     entity="anonymized",
+#     settings=wandb.Settings(start_method="fork"),
+#     project="betawolf",
+#     name=args.run_name,
+#     config=args,
+# )
+# from lightning.pytorch.loggers import WandbLogger
+# 
+# 
+# wandb_logger = WandbLogger(project="my-project")
+# wandb_logger.watch(model, log="all")
+
 trainer = pl.Trainer(
-    devices=1, num_nodes=1,
-    default_root_dir=os.environ["work_dir"],
+    devices=1,
+    default_root_dir=os.environ["MODEL_DIR"],
     accelerator="gpu" if torch.cuda.is_available() else 'auto',
     max_steps=max_steps,
     max_epochs=max_epochs,
@@ -60,10 +137,10 @@ trainer = pl.Trainer(
         ModelCheckpoint(
             dirpath=os.environ["MODEL_DIR"],
             filename='model-{epoch:02d}-{train_loss:.2f}',
-            save_top_k=3,  # Save the top 3 models
+            save_top_k=-1,  # Save the top 3 models
             monitor='train_loss',  # Monitor validation loss
             mode='min',  # Minimize validation loss
-            every_n_train_steps=1000,  # Checkpoint every 1000 training steps
+            save_on_train_epoch_end=True
         )
     ],
     check_val_every_n_epoch=check_val_every_n_epoch,
@@ -73,65 +150,6 @@ trainer = pl.Trainer(
     strategy='ddp_find_unused_parameters_true'
 )
 
-class dataset_params():
-    def __init__(self, toy_seq_len, toy_seq_dim, toy_simplex_dim, dataset_dir):
-        self.toy_seq_len = toy_seq_len
-        self.toy_seq_dim = toy_seq_dim
-        self.toy_simplex_dim = toy_simplex_dim
-        self.dataset_dir = dataset_dir
-        self.cls_ckpt = None
-        self.kBT=float(sys.argv[3])
-        
-dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
-
-from utils.dataset import AlCuDataset, IsingDataset
-# dparams.dataset_dir = dataset_dir
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# train_ds = AlCuDataset(dparams)
-train_ds = IsingDataset(dparams)
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
-val_ds = IsingDataset(dparams)
-
-train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
-val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers, drop_last=True)
-# val_loader = None
-
-class Hyperparams():
-    def __init__(self, mode=None, hidden_dim=16, num_cnn_stacks=1, lr=5e-4, dropout=0.0, cls_free_guidance=False, clean_data=False, model="MLP"):
-        self.hidden_dim = hidden_dim
-        self.kernel_size = 3
-        self.padding = 1
-        self.dropout = dropout
-        self.cls_free_guidance = cls_free_guidance
-        self.clean_data = clean_data
-        self.num_cnn_stacks = num_cnn_stacks
-        self.lr = lr
-        self.wandb = False
-        self.seq_dim = seq_dim
-        self.channels = channels
-        self.model = model
-        self.mode = mode
-        self.gamma_focal = 2.
-        self.prefactor_RC = 0.05
-        self.prefactor_CE = 1.
-
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
-        self.cls_expanded_simplex = cls_expanded_simplex
-        self.time_scale = time_scale
-        self.alpha_max = 8
-        self.num_integration_steps = 20
-        self.flow_temp = 1.
-        self.allow_nan_cfactor = True
-
-loss_mode = "RC-focal"
-print("extra loss::", loss_mode)
-
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
-hparams.simplex_params()
-
-from lightning_modules.simplex_module import simplexModule
-model = simplexModule(channels, num_cls=2, hyperparams=hparams)
 
 if stage == "train":
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt)

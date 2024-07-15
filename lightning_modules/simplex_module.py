@@ -121,11 +121,12 @@ class simplexModule(GeneralModule):
 
 
     def general_step(self, batch, batch_idx=None):
-        seq, cls = batch
+        seq, probs = batch
         ### Data augmentation by flipping the binary choices
-        seq_symm = -seq+1
-        seq = torch.cat([seq, seq_symm])
-        cls = torch.cat([cls, cls])
+        if self.stage == "train":
+            seq_symm = -seq+1
+            seq = torch.cat([seq, seq_symm])
+            probs = torch.cat([probs, probs])
             
         if self.hyperparams.model == "CNN3D":
             B, H, W, D = seq.shape
@@ -141,8 +142,10 @@ class simplexModule(GeneralModule):
         elif self.hyperparams.model == "CNN2D":
             logits = (logits.permute(0,2,3,1)).reshape(-1, self.model.alphabet_size)
         # logits.retain_grad()
-        
-        CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
+        if self.hyperparams.mode is not None and "E-weighted" in self.hyperparams.mode:
+            CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)*probs[:,None]
+        else:
+            CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
         self.lg("CELoss", CELoss)
         losses = self.hyperparams.prefactor_CE* CELoss
         

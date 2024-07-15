@@ -8,7 +8,7 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T2.2/kernel3x3_timeembed/finetune14"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed/finetune17"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-T4.0"
 
@@ -24,7 +24,7 @@ if stage == "train":
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
-    batch_size = 8192*2
+    batch_size = 8192*4
     if ckpt is None: 
         raise Exception("ERROR:: ckpt not initiated")
     print("Validating with ckpt::", ckpt)
@@ -80,6 +80,7 @@ class dataset_params():
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
+        self.kBT=float(sys.argv[3])
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 

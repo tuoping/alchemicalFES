@@ -93,12 +93,12 @@ def pbc(i,L=16):
         return i
     
 
-def ising_boltzman_prob(seq, J=1, kBT=4.0):
+def ising_boltzman_prob(seq, J=1):
     shape = seq.shape
-    spins = seq.clone().detach()
+    spins = seq.clone()
     spins[torch.where(spins==0)]=-1
     B,H,W = shape
-    E = torch.zeros(B)
+    E = torch.zeros(B, device=spins.device)
     for i in range(H):
         for j in range(W):
             E += -spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
@@ -107,8 +107,7 @@ def ising_boltzman_prob(seq, J=1, kBT=4.0):
             E += -spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
 
     E /= 2
-    prob = torch.exp(-E/kBT)
-    return prob, E/kBT
+    return E
 
 
 def RC(logits):
@@ -181,17 +180,14 @@ class IsingDataset(torch.utils.data.Dataset):
         self.seqs = all_data.reshape(-1,*args.toy_seq_dim).to(device=device, dtype=torch.int64)
         self.seqs[torch.where(self.seqs == -1)] = 0
         # self.clss = torch.full_like(self.seqs, 0).to(device="cuda", dtype=torch.int64)
-        self.clss = self.seqs.clone()
-        # prob,scaled_energy = ising_boltzman_prob(self.seqs)
-        # self.clss = prob
-        # distribution_dict = {'probs': self.probs, 'class_probs': self.class_probs}
-        # torch.save(distribution_dict, os.path.join(os.environ["MODEL_DIR"], 'toy_distribution_dict.pt' ))
-
+        # self.clss = self.seqs.clone()
+        energy = ising_boltzman_prob(self.seqs)
+        self.probs = torch.exp(-energy/args.kBT)
     def __len__(self):
         return len(self.seqs)
 
     def __getitem__(self, idx):
-        return self.seqs[idx], self.clss[idx]
+        return self.seqs[idx], self.probs[idx]
     
 
 

@@ -275,7 +275,7 @@ def run_statistics_rcrew(T, epoch):
         # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
         plt.tick_params(axis='both', which='major', labelsize=14)
         plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
         plt.savefig("F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
 
         plt.figure()
@@ -283,7 +283,7 @@ def run_statistics_rcrew(T, epoch):
         # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
         plt.tick_params(axis='both', which='major', labelsize=14)
         plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
         plt.savefig("BIAS-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
 
         plt.figure()
@@ -293,7 +293,7 @@ def run_statistics_rcrew(T, epoch):
         # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
         plt.tick_params(axis='both', which='major', labelsize=14)
         plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
         plt.savefig("REW-F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
 
         ofile_Prob.flush()
@@ -330,7 +330,7 @@ def run_statistics(T, epoch):
         # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
         plt.tick_params(axis='both', which='major', labelsize=14)
         plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
         plt.savefig("F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
         if ii == len(seq_t)-1:
             plt.savefig("F-MAGN-kBT%.2f.png"%(T), bbox_inches="tight")
@@ -383,7 +383,7 @@ def run_interpolate_DOS():
     plt.legend(fontsize=12)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Magnetization", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("DOS-MAGN-interpolateT%.2fT%.2f.png"%(T1, T2), bbox_inches="tight")
 
 def run_interpolate_FES(T3):
@@ -423,7 +423,7 @@ def run_interpolate_FES(T3):
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Magnetization", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("F-MAGN-interpolateDOST%.2fT%.2fFT%.2f.png"%(T1,T2,T3), bbox_inches="tight")
     ofile_F.flush()
     ofile_F.close()
@@ -441,7 +441,7 @@ def plot_statistics(T):
     # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Magnetization", fontdict={"size":14})
-    plt.ylabel("Free energy ($k_BT$)", fontdict={"size":14})
+    plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
     plt.savefig("F-MAGN-kBT%.2f.png"%T, bbox_inches="tight")
 
 '''

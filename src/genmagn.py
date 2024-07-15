@@ -13,8 +13,8 @@ T1=2.0
 T2=2.2
 
 val_dirname  = {
-    T1: "../../../../latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T1,*seq_dim),
-    T2: "../../../../latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T2,*seq_dim),
+    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T1,*seq_dim),
+    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/val_baseline_latt%dx%d"%(T2,*seq_dim),
 }
 ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test3/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
@@ -288,8 +288,7 @@ def plot_kBT_expectation(T3):
     plt.savefig("E-T-interpolateDOST%.2fT%.2fFT%.2f.png"%(T1,T2,T3), bbox_inches="tight")
 '''
 
-# run_statistics(T2, epoch2)
-run_statistics(T1, epoch1)
-# plot_statistics(2.0)
+plot_statistics(T2)
+# run_statistics(T1, epoch1)
 
 print("Total wall time:: ", time.time()-global_s_time)
