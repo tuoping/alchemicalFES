@@ -110,6 +110,28 @@ def ising_boltzman_prob(seq, J=1):
     return E
 
 
+def atomic_ising_boltzman_prob(seq, J=1, K=2):
+    shape = seq.shape
+    spins = seq.clone()
+    spins[torch.where(spins==0)]=-1
+    B,H,W = shape
+    E = torch.zeros((*shape,K), device=spins.device)
+    for i in range(H):
+        for j in range(W):
+            E[:,i,j,0] += -spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
+            E[:,i,j,0] += -spins[:,i,j]*spins[:,pbc(i+1,L=H),j]*J
+            E[:,i,j,0] += -spins[:,i,j]*spins[:,i,pbc(j-1,L=H)]*J
+            E[:,i,j,0] += -spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
+            E[:,i,j,1] += spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
+            E[:,i,j,1] += spins[:,i,j]*spins[:,pbc(i+1,L=H),j]*J
+            E[:,i,j,1] += spins[:,i,j]*spins[:,i,pbc(j-1,L=H)]*J
+            E[:,i,j,1] += spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
+
+    E /= 2
+    norm_probs = torch.nn.functional.softmax(-E, dim=-1)
+    return norm_probs
+
+
 def RC(logits):
     assert logits.shape[-1] == 2
     B = logits.shape[0]
@@ -181,13 +203,13 @@ class IsingDataset(torch.utils.data.Dataset):
         self.seqs[torch.where(self.seqs == -1)] = 0
         # self.clss = torch.full_like(self.seqs, 0).to(device="cuda", dtype=torch.int64)
         # self.clss = self.seqs.clone()
-        energy = ising_boltzman_prob(self.seqs)
-        self.probs = torch.exp(-energy/args.kBT)
+        self.atomic_probs = atomic_ising_boltzman_prob(self.seqs)
+
     def __len__(self):
         return len(self.seqs)
 
     def __getitem__(self, idx):
-        return self.seqs[idx], self.probs[idx]
+        return self.seqs[idx], self.atomic_probs[idx]
     
 
 

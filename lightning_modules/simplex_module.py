@@ -121,13 +121,13 @@ class simplexModule(GeneralModule):
 
 
     def general_step(self, batch, batch_idx=None):
-        seq, probs = batch
+        seq, atomic_probs = batch
         ### Data augmentation by flipping the binary choices
         if self.stage == "train":
             seq_symm = -seq+1
             seq = torch.cat([seq, seq_symm])
-            probs = torch.cat([probs, probs])
-            
+            atomic_probs = torch.cat([atomic_probs, atomic_probs])
+
         if self.hyperparams.model == "CNN3D":
             B, H, W, D = seq.shape
             xt, t = sample_cond_prob_path(self.hyperparams, seq, self.model.alphabet_size)
@@ -142,10 +142,12 @@ class simplexModule(GeneralModule):
         elif self.hyperparams.model == "CNN2D":
             logits = (logits.permute(0,2,3,1)).reshape(-1, self.model.alphabet_size)
         # logits.retain_grad()
-        if self.hyperparams.mode is not None and "E-weighted" in self.hyperparams.mode:
-            CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)*probs[:,None]
-        else:
-            CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
+        # if self.hyperparams.mode is not None and "E-weighted" in self.hyperparams.mode:
+        #     CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)*probs[:,None]
+        # else:
+        #     CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
+
+        CELoss = torch.nn.functional.cross_entropy(logits, atomic_probs.reshape(-1, self.model.alphabet_size), reduction="none").reshape(B,-1)
         self.lg("CELoss", CELoss)
         losses = self.hyperparams.prefactor_CE* CELoss
         
