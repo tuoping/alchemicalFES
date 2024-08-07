@@ -35,7 +35,7 @@ def sample_cond_prob_path_2d(hyperparams, seq, channels):
     t = torch.from_numpy(scipy.stats.expon().rvs(size=batchsize)*hyperparams.time_scale).to(seq.device).float()
 
     alphas = torch.ones(*shape, channels, device=seq.device)
-    alphas = alphas + t[:, None, None, None]*seq_onehot
+    alphas = alphas + 10*t[:, None, None, None]*seq_onehot
     xt = torch.distributions.Dirichlet(alphas).sample()
     return xt, t+1
 
@@ -121,12 +121,12 @@ class simplexModule(GeneralModule):
 
 
     def general_step(self, batch, batch_idx=None):
-        seq, atomic_probs = batch
+        seq, energies = batch
         ### Data augmentation by flipping the binary choices
-        if self.stage == "train":
-            seq_symm = -seq+1
-            seq = torch.cat([seq, seq_symm])
-            atomic_probs = torch.cat([atomic_probs, atomic_probs])
+        # if self.stage == "train":
+        # seq_symm = -seq+1
+        # seq = torch.cat([seq, seq_symm])
+        # atomic_e = torch.cat([atomic_e, atomic_e])
 
         if self.hyperparams.model == "CNN3D":
             B, H, W, D = seq.shape
@@ -146,11 +146,22 @@ class simplexModule(GeneralModule):
         #     CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)*probs[:,None]
         # else:
         #     CELoss = torch.nn.functional.cross_entropy(logits, seq.reshape(-1), reduction='none').reshape(B,-1)
-
-        CELoss = torch.nn.functional.cross_entropy(logits, atomic_probs.reshape(-1, self.model.alphabet_size), reduction="none").reshape(B,-1)
-        self.lg("CELoss", CELoss)
-        losses = self.hyperparams.prefactor_CE* CELoss
-        
+        if self.hyperparams.celosstype is not None and self.hyperparams.celosstype == "RCE":
+            norm_logits = torch.nn.functional.softmax(logits)
+            lognorm_logits = torch.nn.functional.log_softmax(logits)
+            RCELoss = ((norm_logits*((energies*((t-1)-1./self.hyperparams.kBT)[:,None,None,None]).reshape(-1,self.model.alphabet_size))+norm_logits*lognorm_logits).sum(-1)).reshape(B,-1)
+            self.lg("RCELoss", RCELoss)
+            losses = self.hyperparams.prefactor_CE* RCELoss
+        else:
+            probs = torch.nn.functional.softmax(-energies*((t-1)-1./self.hyperparams.kBT)[:,None,None,None], dim=-1)
+            CELoss = torch.nn.functional.cross_entropy(logits, probs.reshape(-1, self.model.alphabet_size), reduction="none").reshape(B,-1)
+            self.lg("CELoss", CELoss)
+            losses = self.hyperparams.prefactor_CE* CELoss
+            if self.stage == "val":
+                np.save("t.npy", t.detach().cpu().numpy()-1)
+                np.save("probs.npy", probs.detach().cpu().numpy())
+                np.save("logits.npy", logits.detach().cpu().numpy())
+                np.save("xt.npy", xt.detach().cpu().numpy())
         if self.hyperparams.mode is not None and "RC" in self.hyperparams.mode:
             xgrid = torch.linspace(-36, 36, 36+1, device=logits.device)
             seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=self.model.alphabet_size).reshape(*shape, self.model.alphabet_size)
@@ -227,12 +238,13 @@ class simplexModule(GeneralModule):
 
         eye = torch.eye(K).to(x0)
         xt = x0.clone()
+        np.save(os.path.join(os.environ["work_dir"], f"xt_val_step{self.trainer.global_step}_inttime{1.00}"), xt.cpu().to(torch.float16))
         np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{1.00}"), xt.cpu().to(torch.float16))
         # return xt, x0
         t_span = torch.linspace(1, self.hyperparams.alpha_max, self.hyperparams.num_integration_steps, device = self.device)
         for i, (s, t) in enumerate(zip(t_span[:-1], t_span[1:])):
             logits = self.model(xt, t=s[None].expand(B))
-            flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
+            flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1), -1)
             default_dtype = flow_probs.dtype
             if not torch.allclose((flow_probs.reshape(B,-1,K)).sum(2), torch.ones((B, H*W), device=self.device, dtype=default_dtype), atol=1e-4) or not (flow_probs >= 0).all():
                 print(f'WARNING: flow_probs.min(): {flow_probs.min()}. Some values of flow_probs do not lie on the simplex. There are we are {(flow_probs<0).sum()} negative values in flow_probs of shape {flow_probs.shape} that are negative. We are projecting them onto the simplex.')
@@ -260,7 +272,8 @@ class simplexModule(GeneralModule):
             if not torch.allclose((xt.reshape(B,-1,K)).sum(2), torch.ones((B, H*W), device=self.device), atol=1e-4) or not (xt >= 0).all():
                 print(f'WARNING@time{s}: xt.min(): {xt.min()}. Some values of xt do not lie on the simplex. There are we are {(xt<0).sum()} negative values in xt of shape {xt.shape} that are negative. We are projecting them onto the simplex.')
                 xt = simplex_proj(xt.reshape(B,-1)).reshape(B,H,W,K)
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{t}"), xt.cpu().to(torch.float16))
+            np.save(os.path.join(os.environ["work_dir"], f"xt_val_step{self.trainer.global_step}_inttime{t}"), xt.cpu().to(torch.float16))
+            np.save(os.path.join(os.environ["work_dir"], f"logits_val_step{self.trainer.global_step}_inttime{t}"), logits.permute(0,2,3,1).cpu().to(torch.float16))
                
         return xt, x0
 
@@ -278,7 +291,7 @@ class simplexModule(GeneralModule):
         t_span = torch.linspace(1, self.hyperparams.alpha_max, self.hyperparams.num_integration_steps, device = self.device)
         for i, (s, t) in enumerate(zip(t_span[:-1], t_span[1:])):
             logits = self.model(xt, t=s[None].expand(B))
-            flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,4,1)/self.hyperparams.flow_temp, -1)
+            flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,4,1), -1)
 
             if not torch.allclose((flow_probs.reshape(B,-1,K)).sum(2), torch.ones((B, H*W*D), device=self.device), atol=1e-4) or not (flow_probs >= 0).all():
                 print(f'WARNING: flow_probs.min(): {flow_probs.min()}. Some values of flow_probs do not lie on the simplex. There are we are {(flow_probs<0).sum()} negative values in flow_probs of shape {flow_probs.shape} that are negative. We are projecting them onto the simplex.')

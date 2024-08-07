@@ -93,20 +93,67 @@ def pbc(i,L=16):
         return i
     
 
-def ising_boltzman_prob(seq, J=1):
+def ising_boltzman_prob(seq, J=1, K=2, require_grad=False):
     shape = seq.shape
     spins = seq.clone()
     spins[torch.where(spins==0)]=-1
     B,H,W = shape
-    E = torch.zeros(B, device=spins.device)
+    E_base = torch.zeros(B, device=spins.device)
+    if require_grad:
+        grad = torch.zeros((*shape,K), device=spins.device)
     for i in range(H):
         for j in range(W):
-            E += -spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
-            E += -spins[:,i,j]*spins[:,pbc(i+1,L=H),j]*J
-            E += -spins[:,i,j]*spins[:,i,pbc(j-1,L=H)]*J
-            E += -spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
+            E_base += -spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
+            E_base += -spins[:,i,j]*spins[:,pbc(i+1,L=H),j]*J
+            E_base += -spins[:,i,j]*spins[:,i,pbc(j-1,L=H)]*J
+            E_base += -spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
+            if require_grad:
+                grad[:,i,j,0] += spins[:,pbc(i-1,L=H),j]*J
+                grad[:,i,j,0] += spins[:,pbc(i+1,L=H),j]*J
+                grad[:,i,j,0] += spins[:,i,pbc(j-1,L=H)]*J
+                grad[:,i,j,0] += spins[:,i,pbc(j+1,L=H)]*J
+                grad[:,i,j,1] += -spins[:,pbc(i-1,L=H),j]*J
+                grad[:,i,j,1] += -spins[:,pbc(i+1,L=H),j]*J
+                grad[:,i,j,1] += -spins[:,i,pbc(j-1,L=H)]*J
+                grad[:,i,j,1] += -spins[:,i,pbc(j+1,L=H)]*J
 
+                grad[:,pbc(i-1,L=H),j,0] += spins[:,i,j]*J
+                grad[:,pbc(i-1,L=H),j,1] += -spins[:,i,j]*J
+                grad[:,pbc(i+1,L=H),j,0] += spins[:,i,j]*J
+                grad[:,pbc(i+1,L=H),j,1] += -spins[:,i,j]*J
+                grad[:,i,pbc(j-1,L=H),0] += spins[:,i,j]*J
+                grad[:,i,pbc(j-1,L=H),1] += -spins[:,i,j]*J
+                grad[:,i,pbc(j+1,L=H),0] += spins[:,i,j]*J
+                grad[:,i,pbc(j+1,L=H),1] += -spins[:,i,j]*J               
+    if require_grad:
+        grad /= 2
+    
+    E = torch.zeros((*shape,K), device=spins.device)
+
+    for i in range(H):
+        for j in range(W):
+            E[:,i,j,0] = E_base
+            E[:,i,j,1] = E_base
+            E[:,i,j,0] -= -spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
+            E[:,i,j,0] -= -spins[:,i,j]*spins[:,pbc(i+1,L=H),j]*J
+            E[:,i,j,0] -= -spins[:,i,j]*spins[:,i,pbc(j-1,L=H)]*J
+            E[:,i,j,0] -= -spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
+            E[:,i,j,0] += spins[:,pbc(i-1,L=H),j]*J
+            E[:,i,j,0] += spins[:,pbc(i+1,L=H),j]*J
+            E[:,i,j,0] += spins[:,i,pbc(j-1,L=H)]*J
+            E[:,i,j,0] += spins[:,i,pbc(j+1,L=H)]*J
+
+            E[:,i,j,1] -= -spins[:,i,j]*spins[:,pbc(i-1,L=H),j]*J
+            E[:,i,j,1] -= -spins[:,i,j]*spins[:,pbc(i+1,L=H),j]*J
+            E[:,i,j,1] -= -spins[:,i,j]*spins[:,i,pbc(j-1,L=H)]*J
+            E[:,i,j,1] -= -spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
+            E[:,i,j,1] += -spins[:,pbc(i-1,L=H),j]*J
+            E[:,i,j,1] += -spins[:,pbc(i+1,L=H),j]*J
+            E[:,i,j,1] += -spins[:,i,pbc(j-1,L=H)]*J
+            E[:,i,j,1] += -spins[:,i,pbc(j+1,L=H)]*J
     E /= 2
+    if require_grad:
+        return E,grad
     return E
 
 
@@ -128,8 +175,8 @@ def atomic_ising_boltzman_prob(seq, J=1, K=2):
             E[:,i,j,1] += spins[:,i,j]*spins[:,i,pbc(j+1,L=H)]*J
 
     E /= 2
-    norm_probs = torch.nn.functional.softmax(-E, dim=-1)
-    return norm_probs
+    # norm_probs = torch.nn.functional.softmax(-E, dim=-1)
+    return E
 
 
 def RC(logits):
@@ -193,7 +240,7 @@ class IsingDataset(torch.utils.data.Dataset):
         super().__init__()
 
         all_data = torch.from_numpy(np.load("data/%s/buffer.npy"%(args.dataset_dir)))
-
+        # all_data = torch.concatenate([all_data, torch.from_numpy(np.load("data/ising-latt6x6-T4.0/latt6x6/buffer-S20.00.npy"))], dim=0)
         print("loaded ", all_data.shape, all_data.dtype)
         self.num_cls = 2
         self.seq_len = args.toy_seq_len
@@ -203,13 +250,13 @@ class IsingDataset(torch.utils.data.Dataset):
         self.seqs[torch.where(self.seqs == -1)] = 0
         # self.clss = torch.full_like(self.seqs, 0).to(device="cuda", dtype=torch.int64)
         # self.clss = self.seqs.clone()
-        self.atomic_probs = atomic_ising_boltzman_prob(self.seqs)
+        self.energies = ising_boltzman_prob(self.seqs)
 
     def __len__(self):
         return len(self.seqs)
 
     def __getitem__(self, idx):
-        return self.seqs[idx], self.atomic_probs[idx]
+        return self.seqs[idx], self.energies[idx]
     
 
 

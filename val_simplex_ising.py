@@ -8,7 +8,7 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed/finetune17"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/relative_energy_ce/"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-T4.0"
 
@@ -113,18 +113,19 @@ class Hyperparams():
         self.model = model
         self.mode = mode
         self.gamma_focal = 2.
-        self.prefactor_RC = 1.
-        self.prefactor_CE = 0.05
+        # self.prefactor_RC = 1.
+        self.prefactor_CE = 1.
+        self.celosstype="CE"
+        self.kBT=float(sys.argv[3])
 
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
+    def simplex_params(self, cls_expanded_simplex=False, time_scale=0.5):
         self.cls_expanded_simplex = cls_expanded_simplex
         self.time_scale = time_scale
-        self.alpha_max = 8
+        self.alpha_max = 2.
         self.num_integration_steps = 20
-        self.flow_temp = 1.
         self.allow_nan_cfactor = True
 
-loss_mode = "RC-focal"
+loss_mode = None
 print("extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)

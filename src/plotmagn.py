@@ -5,19 +5,20 @@ import os,sys
 import time
 from copy import deepcopy
 
+conffile_head = "logits_"
 
 seq_dim = (6,6)
 num_batches=1
 epoch1=int(sys.argv[1])
 epoch2=170
-T1=2.2
+T1=3.2
 T2=6.0
 
 val_dirname  = {
     T1: "../",
     T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.1f/kernel3x3_timeembed/finetune9/val_baseline/"%(T2)
 }
-ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test3/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
+ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
 global_s_time = time.time()
 
@@ -114,23 +115,26 @@ def spin_structure_factor(seq):
 
 import glob
 def loadmodelprediction(_dirname, epoch, num_batches):
-    dirname = _dirname+"/epoch%d_sample%d"%(epoch,1)
-    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_step0_inttime*")))
+    dirname = _dirname+"/epoch%d_sample%d"%(epoch,num_batches)
+    f_logits_t = sorted(glob.glob(os.path.join(dirname, conffile_head+"val_step0_inttime*")))
     print(">>> Reading model predictions from: ", dirname)
 
     logits_t = [np.load(f).astype(np.float16) for f in f_logits_t]
+    diffusion_beta = np.array([float(f.replace(os.path.join(dirname, conffile_head+"val_step0_inttime"),"").replace(".npy","")) for f in f_logits_t])-1
 
-
+    print("        ", len(logits_t), [logits_t[i].shape for i in range(len(logits_t))])
+    '''
     for ii in range(num_batches):
         if ii == 0:
             print("        ", len(logits_t), [logits_t[i].shape for i in range(len(logits_t))])
             continue
         dirname = _dirname+"/epoch%d_sample%d"%(epoch,ii+1)
-        _f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_step0_inttime*")))
+        _f_logits_t = sorted(glob.glob(os.path.join(dirname, conffile_head+"val_step0_inttime*")))
         _logits_t = [np.load(f).astype(np.float16) for f in _f_logits_t]
         print("        ", ii+1,len(_logits_t), [_logits_t[i].shape for i in range(len(_f_logits_t))])
         logits_t = [np.concatenate([logits_t[i], _logits_t[i]], axis=0) for i in range(len(_f_logits_t))]
-    return logits_t
+    '''
+    return logits_t, diffusion_beta
 
 def logits2seq(logits_t):
     seq_t = []
@@ -232,91 +236,22 @@ def run_RC_val(T, epoch):
         plt.plot(bin_centers, F.numpy())
         plt.savefig("F-RC-t%d.png"%ii, bbox_inches="tight")
 
-def run_statistics_rcrew(T, epoch):
-    ### load model predictions
-    s_time = time.time()
-    logits_t = loadmodelprediction(val_dirname[T], epoch, num_batches)
-    seq_t = logits2seq(logits_t)
-    e_time = time.time()
-    print("Time for loading predictions of model(kBT=%.01f):: "%T, e_time-s_time)
-    s_time = e_time
-
-    ### loading model predictions at T and calculating the potential energy and its statistics.
-    for ii in range(len(seq_t)):
-        ofile_Prob = open("REW-PROB-MAGN-kBT%.2f-t%d.dat"%(T,ii), "wb")
-        ofile_F = open("REW-F-MAGN-kBT%.2f-t%d.dat"%(T,ii), "wb")
-        
-        print(">>> PROCESSING:: ")
-        hist_E, bin_centers_E, P_E, F_E, idxF_E = histvar(seq_t[ii], Ising_magnetization, bins)
-        ### RC and KDE
-        rc = RC(torch.from_numpy(logits_t[ii]))
-        Fbias,Hbias,idxF_bias = reversekde(rc,torch.from_numpy(bin_centers_E),1.)
-        ### Reweight
-        assert Hbias.shape == P_E.shape
-        # rew_P_E = P_E*Hbias.numpy()
-        # idxF_E2 = np.where(rew_P_E > 0)
-        # print("Sum of Histogram =", P_E.sum())
-        # print("Sum of reweighted Histogram = ", rew_P_E[idxF_E2].sum())
-        # print(rew_P_E)
-        # rew_F = -np.log(rew_P_E[idxF_E2]/rew_P_E[idxF_E2].sum())
-        idxF_E2 = np.intersect1d(idxF_E, idxF_bias)
-        rew_F = -np.log(P_E[idxF_E2])+np.log(Hbias.numpy()[idxF_E2])
-        
-
-        # np.savetxt(ofile_Prob, bin_centers_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
-        # np.savetxt(ofile_Prob, rew_P_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
-        np.savetxt(ofile_F, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
-        np.savetxt(ofile_F, rew_F.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
-
-        plt.figure()
-        plt.scatter(bin_centers_E[idxF_E], F_E, label="Model prediction", marker="o", c="green")
-        if T in Reference_dict:
-            plt.plot(Reference_dict[T][0], Reference_dict[T][1], c="green", label="Ground truth")
-        # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
-        plt.tick_params(axis='both', which='major', labelsize=14)
-        plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
-        plt.savefig("F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
-
-        plt.figure()
-        plt.scatter(bin_centers_E[idxF_bias], Fbias, label="RC bias", marker="o", c="green")
-        # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
-        plt.tick_params(axis='both', which='major', labelsize=14)
-        plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
-        plt.savefig("BIAS-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
-
-        plt.figure()
-        plt.scatter(bin_centers_E[idxF_E2], rew_F, label="Model prediction", marker="o", c="green")
-        if T in Reference_dict:
-            plt.plot(Reference_dict[T][0], Reference_dict[T][1], c="green", label="Ground truth")
-        # plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
-        plt.tick_params(axis='both', which='major', labelsize=14)
-        plt.xlabel("Magnetization", fontdict={"size":14})
-        plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
-        plt.savefig("REW-F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
-
-        ofile_Prob.flush()
-        ofile_F.flush()
-        ofile_Prob.close()
-        ofile_F.close()
-    e_time = time.time()
-    print("Time for processing:: ", e_time-s_time)
-
 
 def run_statistics(T, epoch):
     ### load model predictions
     s_time = time.time()
-    logits_t = loadmodelprediction(val_dirname[T], epoch, num_batches)
+    logits_t,diffusion_beta = loadmodelprediction(val_dirname[T], epoch, num_batches)
     seq_t = logits2seq(logits_t)
     e_time = time.time()
     print("Time for loading predictions of model(kBT=%.01f):: "%T, e_time-s_time)
     s_time = e_time
-
+    print("Diffusion kBT list = ", diffusion_beta)
     ### loading model predictions at T and calculating the potential energy and its statistics.
     for ii in range(len(seq_t)):
-        ofile_Prob = open("PROB-MAGN-kBT%.2f-t%d.dat"%(T,ii), "wb")
-        ofile_F = open("F-MAGN-kBT%.2f-t%d.dat"%(T,ii), "wb")
+        if os.path.exists("PROB-MAGN-kBT%.2f-beta%.4f.dat"%(T,diffusion_beta[ii])):
+            raise Exception("PROB-MAGN-kBT%.2f-beta%.4f.dat"%(T,diffusion_beta[ii]), "exists")
+        ofile_Prob = open("PROB-MAGN-kBT%.2f-beta%.4f.dat"%(T,diffusion_beta[ii]), "wb")
+        ofile_F = open("F-MAGN-kBT%.2f-beta%.4f.dat"%(T,diffusion_beta[ii]), "wb")
         plt.figure()
         print(">>> PROCESSING:: ")
         hist_E, bin_centers_E, P_E, F_E, idxF_E = histvar(seq_t[ii], Ising_magnetization, bins)
@@ -324,6 +259,11 @@ def run_statistics(T, epoch):
         np.savetxt(ofile_Prob, P_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="PROB kBT=%.2f"%T)
         np.savetxt(ofile_F, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS kBT=%.2f"%T)
         np.savetxt(ofile_F, F_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%T)
+        print(ii, diffusion_beta[ii])
+        print("PROB-MAGN-kBT%.2f-t%d.dat"%(T,diffusion_beta[ii]))
+        print("PROB: ", P_E.reshape([1,-1]))
+        print("F-MAGN-kBT%.2f-t%d.dat"%(T,diffusion_beta[ii]))
+        print("E: ", F_E.reshape([1,-1]))
         plt.scatter(bin_centers_E[idxF_E], F_E, label="Model prediction", marker="o", c="green")
         if T in Reference_dict:
             plt.plot(Reference_dict[T][0], Reference_dict[T][1], c="green", label="Ground truth")
@@ -331,7 +271,8 @@ def run_statistics(T, epoch):
         plt.tick_params(axis='both', which='major', labelsize=14)
         plt.xlabel("Magnetization", fontdict={"size":14})
         plt.ylabel("Negative likelihood ($k_BT$)", fontdict={"size":14})
-        plt.savefig("F-MAGN-kBT%.2f-t%d.png"%(T,ii), bbox_inches="tight")
+        plt.savefig("F-MAGN-kBT%.2f-beta%.4f.png"%(T,diffusion_beta[ii]), bbox_inches="tight")
+        '''
         if ii == len(seq_t)-1:
             plt.savefig("F-MAGN-kBT%.2f.png"%(T), bbox_inches="tight")
             ofile_Prob_end = open("PROB-MAGN-kBT%.2f.dat"%(T), "wb")
@@ -344,8 +285,7 @@ def run_statistics(T, epoch):
             ofile_Prob_end.flush()
             ofile_F_end.close()
             ofile_Prob_end.close()
-        ofile_Prob.flush()
-        ofile_F.flush()
+        '''
         ofile_Prob.close()
         ofile_F.close()
     e_time = time.time()
@@ -462,8 +402,5 @@ def plot_kBT_expectation(T3):
 
 
 run_statistics(T1, epoch1)
-# run_statistics(T2, epoch2)
-# run_interpolate_DOS()
-# run_interpolate_FES(T1)
 
 print("Total wall time:: ", time.time()-global_s_time)

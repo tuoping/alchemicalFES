@@ -7,8 +7,9 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.0/kernel3x3_timeembed/"
-os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T{sys.argv[1]}/"
+# os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[2]}_sample{sys.argv[3]}")
+os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-T4.0"
 
 stage = "val"
@@ -17,16 +18,16 @@ seq_len = 6*6
 seq_dim = (6, 6)
 ckpt = None
 import glob
-ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
+# ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[2]}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
     batch_size = 16384*2
-    if ckpt is None: 
-        raise Exception("ERROR:: ckpt not initiated")
-    print("Validating with ckpt::", ckpt)
+    # if ckpt is None: 
+    #     raise Exception("ERROR:: ckpt not initiated")
+    # print("Validating with ckpt::", ckpt)
 else:
     raise Exception("Unrecognized stage")
 num_workers = 0
@@ -57,17 +58,18 @@ trainer = pl.Trainer(
         ModelCheckpoint(
             dirpath=os.environ["MODEL_DIR"],
             filename='model-{epoch:02d}-{train_loss:.2f}',
-            save_top_k=-1,  # Save the top 3 models
+            save_top_k=3,  # Save the top 3 models
             monitor='train_loss',  # Monitor validation loss
             mode='min',  # Minimize validation loss
-            every_n_train_steps=5000,  # Checkpoint every 1000 training steps
+            every_n_train_steps=1000,  # Checkpoint every 1000 training steps
         )
     ],
     check_val_every_n_epoch=check_val_every_n_epoch,
     val_check_interval=val_check_interval,
     log_every_n_steps=1,
     precision=16,
-    strategy='ddp_find_unused_parameters_true'
+    strategy='ddp_find_unused_parameters_true',
+    inference_mode=False
 )
 
 class dataset_params():
@@ -108,21 +110,17 @@ class Hyperparams():
         self.channels = channels
         self.model = model
         self.mode = mode
+        self.gamma_focal = 2.
+        # self.prefactor_RC = 1.
+        self.prefactor_CE = 1.
+        self.celosstype="CE"
+        self.kBT=float(sys.argv[1])
 
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2, time0_scale = 1.0):
-        self.cls_expanded_simplex = cls_expanded_simplex
-        self.time_scale = time_scale
-        self.alpha_max = 8
-        self.num_integration_steps = 40
-        self.flow_temp = 1.
-        self.allow_nan_cfactor = True
-        self.time0_scale = time0_scale
 
-    def gaussian_params(self, time_scale=2, time0_scale = 1):
+    def gaussian_params(self, time_scale=0.5):
         self.sigma_min = 0.0001
         self.time_scale = time_scale
-        self.time0_scale = time0_scale
-        self.num_integration_steps = 20
+        self.num_integration_steps = 40
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D")
 hparams.gaussian_params()

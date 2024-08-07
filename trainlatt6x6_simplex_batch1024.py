@@ -8,7 +8,7 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[1]}/energy/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[1]}/relative_energy_ce/"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
 dataset_dir = f"ising-latt6x6-T{sys.argv[1]}/"
@@ -54,7 +54,7 @@ class dataset_params():
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
-        self.kBT=float(sys.argv[1])
+        
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
@@ -88,13 +88,14 @@ class Hyperparams():
         # self.gamma_focal = 2.
         # self.prefactor_RC = 1.
         self.prefactor_CE = 1.
+        self.celosstype = "CE"
+        self.kBT=float(sys.argv[1])
 
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
+    def simplex_params(self, cls_expanded_simplex=False, time_scale=0.5):
         self.cls_expanded_simplex = cls_expanded_simplex
         self.time_scale = time_scale
-        self.alpha_max = 8
+        self.alpha_max = 1.
         self.num_integration_steps = 20
-        self.flow_temp = 1.
         self.allow_nan_cfactor = True
 
 loss_mode = None
