@@ -51,3 +51,5 @@ data
 trainlatt6x6_simplex_batch1024_*
 *.npy
 testdataset
+backup_*
+archive
