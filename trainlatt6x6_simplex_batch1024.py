@@ -7,10 +7,10 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6_d/"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6-T5.2-T4.0"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
-dataset_dir = "ising-latt6x6-anneal/"
+dataset_dir = "ising-latt6x6-T4.0/latt6x6"
 
 stage = "train"
 channels = 2
@@ -18,7 +18,7 @@ seq_len= 6*6
 seq_dim = (6,6)
 ckpt = None
 import glob
-ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
+# ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 2048
     if ckpt is not None: 
@@ -50,12 +50,9 @@ class dataset_params():
         self.toy_seq_dim = toy_seq_dim
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
-        self.cls_ckpt = None
-        self.t_max = 10
-        self.t_min = 0.0001
-        self.dataset_files = ["buffer_enhancelowTmaxT_ordered_dt0.1.npy", "t_enhancelowTmaxT_ordered_dt0.1.npy"]
-        self.basis = "simplex"
-        self.subset = False
+        self.dataset_file = "buffer-S4.00.npy"
+        self.prev_dataset_file = "buffer-S5.20.npy"
+        self.betas = [4.0, 5.2]
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
@@ -85,21 +82,8 @@ class Hyperparams():
         self.model = model
 
         self.mode = mode
-        if mode is not None and "RC" in "".join(mode):
-            self.prefactor_RC = 1.
-            self.tgrid_num_alpha=40
-            self.tgrid_bandwidth=0.5
-        if mode is not None and "multinomial" in mode:
-            self.prefactor_M = 1.
-        if mode is not None and "Energy" in mode:
-            self.prefactor_E = 1.
-        self.prefactor_CE = 0.05
+        self.prefactor_CE = 1.
         self.classifier = False
-        if self.classifier:
-            self.prefactor_E = 1.
-
-        self.t_max = 10.
-        self.t_min = 0.0001
 
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2):

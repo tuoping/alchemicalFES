@@ -1,17 +1,21 @@
 #!/bin/bash -l
 #SBATCH --parsable
 #SBATCH --nodes 1
-#SBATCH --ntasks-per-node 1
+#SBATCH --ntasks-per-node 8
 #SBATCH --gres=gpu:1
-#SBATCH --partition gpu
-#SBATCH --mem-per-gpu=24G
-#SBATCH --time=24:00:00
-#SBATCH --exclude=gpu113,gpu114,gpu118,gpu119,gpu123,gpu124,gpu125,gpu126,gpu127,gpu136,gpu137,gpu138,gpu139,gpu144,gpu145,gpu146,gpu147,gpu148,gpu150
+#SBATCH --partition gpu100
+#SBATCH --mem-per-gpu=24g
+#SBATCH --time=48:00:00
+#SBATCH --constraint=bookworm
+#SBATCH --exclude=
 
+# module purge
+# module load openmpi
+# export OMP_NUM_THREADS=16
+# export TF_INTRA_OP_PARALLELISM_THREADS=16
+# export TF_INTER_OP_PARALLELISM_THREADS=4
+# 
 # source /nfs/scistore14/chenggrp/ptuo/pkgs/deepmd-kit/sourceme.sh
-# conda activate seq
-
-
-# ~/pkgs/deepmd-kit/envs/seq/bin/python trainlatt6x6_simplex_batch1024_rct.py
-# ~/pkgs/deepmd-kit/envs/seq/bin/python trainlatt6x6_gaussian_batch1024.py
-~/pkgs/deepmd-kit/envs/seq/bin/python trainlatt6x6_celossgaussian_batch1024.py
+ 
+# bash work.sh
+sleep 48h
