@@ -17,7 +17,7 @@ val_dirname  = {
     T1: "../",
     T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.1f/kernel3x3_timeembed/finetune9/val_baseline/"%(T2)
 }
-ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test3/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
+ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
 global_s_time = time.time()
 
@@ -115,7 +115,7 @@ def spin_structure_factor(seq):
 import glob
 def loadmodelprediction(_dirname, epoch, num_batches):
     dirname = _dirname+"/epoch%d_sample%d"%(epoch,1)
-    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_step0_inttime*")))
+    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_inttime*")))
     print(">>> Reading model predictions from: ", dirname)
 
     logits_t = [np.load(f).astype(np.float16) for f in f_logits_t]
