@@ -1,19 +1,20 @@
 import numpy as np
 from collections import Counter
 import matplotlib.pyplot as plt
-import os
+import os,sys
 import time
 from copy import deepcopy
 
-seq_dim = (12,12)
+L=int(sys.argv[3])
+seq_dim = (L,L)
 num_batches=1
-epoch1=174
+epoch1=int(sys.argv[2])
 epoch2=174
-T1=4.0
+T1=2.2
 T2=6.0
 
 val_dirname  = {
-    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T1,*seq_dim),
+    T1: "../",
     T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T2,*seq_dim),
 }
 ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
@@ -68,7 +69,7 @@ def spin_structure_factor(seq):
 import glob
 def loadmodelprediction(_dirname, epoch, num_batches, intstep=-1):
     dirname = _dirname+"/epoch%d_sample%d"%(epoch,1)
-    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_step0_inttime*")))
+    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_inttime*")))
     print(">>> Reading model predictions from: ", dirname)
 
     logits_t = [np.load(f).astype(np.float16) for f in [f_logits_t[0], f_logits_t[intstep]]]

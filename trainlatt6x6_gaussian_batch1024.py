@@ -8,10 +8,10 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.0/kernel3x3_celoss_timeembed"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.2/kernel3x3_timeembed_symmetrized/finetune6"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
-dataset_dir = "ising-latt6x6-T2.0"
+dataset_dir = "ising-latt6x6-T2.2"
 
 stage = "train"
 # channels = 2
@@ -36,7 +36,7 @@ else:
     raise Exception("Unrecognized stage")
 num_workers = 0
 max_steps = 40000000
-max_epochs = 100000
+max_epochs = 1050
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
@@ -85,7 +85,12 @@ class Hyperparams():
         self.channels = channels
         self.model = model
         self.mode = mode
-        self.gamma_focal=5
+        self.alpha = 1.
+        if "RC" in mode:
+            self.prefactor_RC = 0.0001
+            self.prefactor_CE = 1.
+        else:
+            self.prefactor_CE = 1.
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2, time0_scale = 1):
         self.cls_expanded_simplex = cls_expanded_simplex
@@ -102,7 +107,8 @@ class Hyperparams():
         self.time0_scale = time0_scale
         self.num_integration_steps = 20
 
-hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=None)
+
+hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode="RC")
 hparams.gaussian_params()
 from lightning_modules.gaussian_module import gaussianModule
 model = gaussianModule(channels, num_cls=2, hyperparams=hparams)

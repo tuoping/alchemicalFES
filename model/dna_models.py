@@ -279,6 +279,7 @@ class CNNModel2D(nn.Module):
                                    nn.Linear(args.hidden_dim, self.num_cls))
 
         if self.args.cls_free_guidance and not self.classifier:
+            print("Using class free guidance")
             self.cls_embedder = nn.Embedding(num_embeddings=self.num_cls + 1, embedding_dim=args.hidden_dim)
             self.cls_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
     
@@ -297,14 +298,17 @@ class CNNModel2D(nn.Module):
             feat = F.relu(self.linear(feat))
 
         if self.args.cls_free_guidance and not self.classifier:
-            cls_emb = self.cls_embedder(cls)
+            cls_emb = torch.zeros([seq.shape[0], self.args.hidden_dim]).to(seq.device)
+            if (cls > self.num_cls).any():
+                raise Exception("cls value out of range")
+            cls_emb[torch.where(cls<=self.num_cls)] = self.cls_embedder(cls[torch.where(cls<=self.num_cls)])
 
         for i in range(self.num_layers):
             h = self.dropout(feat)
             if not self.args.clean_data:
                 h = h + self.time_layers[i](time_emb)[:, :, None, None]
             if self.args.cls_free_guidance and not self.classifier:
-                h = h + (self.cls_layers[i](cls_emb)).permute(0,3,1,2)
+                h = h + (self.cls_layers[i](cls_emb))[:, :, None, None]
             h = self.norms[i]((h).permute(0,2,3,1))
             h = F.relu(self.convs[i](h.permute(0,3,1,2)))
             if h.shape == feat.shape:
@@ -314,7 +318,6 @@ class CNNModel2D(nn.Module):
 
         feat = self.final_conv(feat)
         if self.classifier:
-            raise Exception("Classifier not implemented")
             feat = feat.mean(dim=1)
             if return_embedding:
                 embedding = self.cls_head[:1](feat)

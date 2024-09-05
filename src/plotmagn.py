@@ -5,12 +5,12 @@ import os,sys
 import time
 from copy import deepcopy
 
-
-seq_dim = (6,6)
+L = int(sys.argv[2])
+seq_dim = (L,L)
 num_batches=1
 epoch1=int(sys.argv[1])
 epoch2=170
-T1=2.2
+T1=float(sys.argv[3])
 T2=6.0
 
 val_dirname  = {

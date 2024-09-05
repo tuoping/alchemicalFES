@@ -45,6 +45,15 @@ def sample_cond_vector_field_2d(hyperparams, seq, channels):
     sample_x.requires_grad = False
     return sample_x, t, ut.float()
 
+
+def RC(logits):
+    assert logits.shape[-1] == 2
+    B = logits.shape[0]
+    RC = torch.sum(logits*torch.tensor([-1,1], device=logits.device)[None,None,None,:], dim=-1)
+    RC = torch.sum(RC.reshape(B, -1), dim=-1)
+    return RC.reshape(-1,1)
+
+
 class gaussianModule(GeneralModule):
     def __init__(self, channels, num_cls, hyperparams):
         super().__init__(hyperparams)
@@ -69,10 +78,11 @@ class gaussianModule(GeneralModule):
 
     def general_step(self, batch, batch_idx=None):
         seq, cls = batch
-        if self.stage == "train":
-            seq_symm = -seq+1
-            seq = torch.cat([seq, seq_symm])
-            cls = torch.cat([cls, cls])
+        ### Data augmentation by flipping the binary choices
+        # if self.stage == "train":
+        #     seq_symm = -seq+1
+        #     seq = torch.cat([seq, seq_symm])
+        #     cls = torch.cat([cls, cls])
         B = seq.shape[0]
         if self.hyperparams.model == "CNN3D":
             xt, t, ut = sample_cond_vector_field(self.hyperparams, seq, self.model.alphabet_size)
@@ -81,22 +91,35 @@ class gaussianModule(GeneralModule):
 
         
         ut_model = self.model(xt, t, cls=cls)
+        ut_model_symm = self.model(-xt, t, cls=cls)
         if self.hyperparams.model == "CNN3D":
-            losses = torch.norm((ut_model.permute(0,2,3,4,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
+            ut_model = ut_model.permute(0,2,3,4,1)
+            ut_model_symm = ut_model_symm.permute(0,2,3,4,1)         
         elif self.hyperparams.model == "CNN2D":
-            losses = torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
-            if self.stage == "val":
-                np.save("t.npy", t.detach().cpu().numpy())
-                np.save("ut.npy", ut.detach().cpu().numpy())
-                np.save("losses.npy", losses.detach().cpu().numpy())
+            ut_model = ut_model.permute(0,2,3,1)
+            ut_model_symm = ut_model_symm.permute(0,2,3,1)
 
-        if self.hyperparams.mode == "focal":
-            norm_xt = torch.nn.functional.softmax(xt, dim=-1)
-            fl = ((torch.pow(norm_xt, self.hyperparams.gamma_focal).sum(-1)).reshape(B, -1))*torch.norm((ut_model.permute(0,2,3,1)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
-            losses += fl
+        if self.hyperparams.model == "CNN3D":
+            raise Exception("3D for symmetric model not implemented")
+            losses = torch.norm((ut_model).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
+        elif self.hyperparams.model == "CNN2D":
+            if self.hyperparams.mode is not None and "focal" in self.hyperparams.mode:
+                losses = torch.norm(((ut_model*0.5-ut_model_symm*0.5)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.*torch.norm(((ut_model*0.5-ut_model_symm*0.5)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2
+            else:
+                losses = torch.norm(((ut_model*0.5-ut_model_symm*0.5)).reshape(B, -1, self.model.alphabet_size) - ut.reshape(B, -1, self.model.alphabet_size), dim=-1)**2/2.
 
         losses = losses.mean(-1)
+        losses_sym = self.hyperparams.alpha*((ut_model+ut_model_symm)**2/2.).reshape(B,-1).mean(-1)
         self.lg("loss", losses)
+        self.lg("symloss", losses_sym)
+        losses = losses*self.hyperparams.prefactor_CE + losses_sym
+
+        if self.hyperparams.mode is not None and "RC" in self.hyperparams.mode:
+            u_rc_model = RC(ut_model*0.5-ut_model_symm*0.5)
+            u_rc = RC(ut)
+            rc_loss = ((u_rc_model-u_rc)**2/2*(u_rc_model-u_rc)**2).reshape(-1)
+            self.lg("rcloss", rc_loss)
+            losses += rc_loss.mean()*self.hyperparams.prefactor_RC
 
         if self.stage == "val":
             if self.hyperparams.model == "CNN3D":
@@ -145,7 +168,8 @@ class gaussianModule(GeneralModule):
         for tt in t_span[1:]:
             samples_tt = torch.ones(B, device=self.device)*tt
             u_t = self.model(xx, samples_tt)
-            xx = xx + u_t.permute(0,2,3,1)*1./self.hyperparams.num_integration_steps
+            u_t_sym = self.model(-xx, samples_tt)
+            xx = xx + ((u_t*0.5-u_t_sym*0.5)).permute(0,2,3,1)*1./self.hyperparams.num_integration_steps
 
             xx_t.append(xx)
             np.save(os.path.join(os.environ["work_dir"], "logits_val_inttime%.2f"%(tt)), xx.detach().cpu().numpy())

@@ -1,20 +1,21 @@
 import numpy as np
 from collections import Counter
 import matplotlib.pyplot as plt
-import os
+import os,sys
 import time
 from copy import deepcopy
 
-seq_dim = (6,6)
-num_batches=18
-epoch1=99
-epoch2=152
-T1=1.8
+L=int(sys.argv[3])
+seq_dim = (L,L)
+num_batches=1
+epoch1=int(sys.argv[2])
+epoch2=174
+T1=float(sys.argv[4])
 T2=6.0
 
 val_dirname  = {
-    T1: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune14/val_baseline_latt%dx%d"%(T1,*seq_dim),
-    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune14/val_baseline_latt%dx%d"%(T2,*seq_dim),
+    T1: "../",
+    T2: "/nfs/scistore14/chenggrp/ptuo/NeuralRG/dirichlet-flow-matching-test2/logs-dir-ising/latt6x6T%.01f/kernel3x3_timeembed/finetune9/val_baseline_latt%dx%d"%(T2,*seq_dim),
 }
 ref_dirname = "/nfs/scistore14/chenggrp/ptuo/NeuralRG/data/ising-latt%dx%d-T4.0/latt%dx%d/"%(*seq_dim, *seq_dim)
 
@@ -68,8 +69,8 @@ def spin_structure_factor(seq):
 import glob
 def loadmodelprediction(_dirname, epoch, num_batches, intstep=-1):
     dirname = _dirname+"/epoch%d_sample%d"%(epoch,1)
-    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_step0_inttime*")))
-    print(">>> Reading model predictions from: ", dirname)
+    f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_inttime*")))
+    print(">>> Reading model predictions from: ", f_logits_t[0])
 
     logits_t = [np.load(f).astype(np.float16) for f in [f_logits_t[0], f_logits_t[intstep]]]
 
@@ -78,7 +79,7 @@ def loadmodelprediction(_dirname, epoch, num_batches, intstep=-1):
             print("        ", len(logits_t), [logits_t[i].shape for i in range(len(logits_t))])
             continue
         dirname = _dirname+"/epoch%d_sample%d"%(epoch,ii+1)
-        _f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_step0_inttime*")))
+        _f_logits_t = sorted(glob.glob(os.path.join(dirname, "logits_val_inttime*")))
         _logits_t = [np.load(f).astype(np.float16) for f in [_f_logits_t[0], _f_logits_t[intstep]]]
         print("        ", ii+1,len(_logits_t), [_logits_t[i].shape for i in range(2)])
         logits_t = [np.concatenate([logits_t[i], _logits_t[i]], axis=0) for i in range(2)]
@@ -353,7 +354,7 @@ def plot_kBT_expectation(T3):
 
 import sys
 if sys.argv[1] == "1":
-    run_statistics(T2, epoch2)
+    # run_statistics(T2, epoch2)
     run_statistics(T1, epoch1)
 else:
     run_interpolate_DOS()

@@ -96,7 +96,15 @@ def histvar(seq, varfunc, bins):
     F = -np.log(P[idxF])
     return hist, bin_centers, P, F, idxF
 
-def run_loading(Tlist):
+def run_loading(Tlist, dumping_format="a"):
+    magn = np.arange(-np.prod(seq_dim), np.prod(seq_dim)+1, 2)
+    bins=np.linspace(magn[0]-1, magn[-1]+1, np.prod(seq_dim)+1+1)
+
+    ofile_Prob_ref = open("PROB-MAGN-REF.dat", dumping_format+"b")
+    ofile_F_ref = open("F-MAGN-REF.dat", dumping_format+"b")
+    plt.figure()
+    line_color = [plt.colormaps["gnuplot"](float(i)/float(len(Tlist))) for i in range(len(Tlist))]
+
     ### loading MC data and calculating the potential energy and its statistics
     s_time = time.time()
     seq_ref_list = {}
@@ -104,18 +112,10 @@ def run_loading(Tlist):
         print(">>> LOADING REF:: ",jj)
         seq_ref = np.load("./buffer-S%.2f.npy"%(jj)).astype(np.float16).reshape(-1,*seq_dim)
         seq_ref_list[jj] = (seq_ref)
-    e_time = time.time()
-    print("Time for loading MC data:: ", e_time-s_time)
-    s_time = e_time
+        e_time = time.time()
+        print("Time for loading MC data:: ", e_time-s_time)
+        s_time = e_time
 
-    magn = np.arange(-np.prod(seq_dim), np.prod(seq_dim)+1, 2)
-    bins=np.linspace(magn[0]-1, magn[-1]+1, np.prod(seq_dim)+1+1)
-
-    ofile_Prob_ref = open("PROB-MAGN-REF.dat", "ab")
-    ofile_F_ref = open("F-MAGN-REF.dat", "ab")
-    plt.figure()
-    line_color = [plt.colormaps["gnuplot"](float(i)/float(10)) for i in range(10)]
-    for idx_jj, jj in enumerate(Tlist):
         print(">>> PROCESSING REF:: ",jj)
         hist_E, bin_centers_E, P_E, F_E, idxF_E = histvar(seq_ref_list[jj], Ising_magnetization, bins)
         if idx_jj == 0:
@@ -124,6 +124,8 @@ def run_loading(Tlist):
         np.savetxt(ofile_F_ref, bin_centers_E[idxF_E].reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="BIN CENTERS: ")
         np.savetxt(ofile_F_ref, F_E.reshape([1,-1]), fmt="%4.4e", delimiter=" ", header="F kBT=%.2f"%jj)
         plt.plot(bin_centers_E[idxF_E], F_E, c=line_color[idx_jj], label="$k_BT=%.1f$"%jj, marker="o")
+        e_time = time.time()
+        print("Time for processing MC data:: ", e_time-s_time)
     plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=14)
     plt.tick_params(axis='both', which='major', labelsize=14)
     plt.xlabel("Magnetization", fontdict={"size":14})
@@ -133,8 +135,7 @@ def run_loading(Tlist):
     ofile_F_ref.flush()
     ofile_Prob_ref.close()
     ofile_F_ref.close()
-    e_time = time.time()
-    print("Time for processing MC data:: ", e_time-s_time)
+
 
 def run_expectation(Tlist):
     ### calculating expectation of energy from probabilities of energy
@@ -167,7 +168,6 @@ def run_expectation(Tlist):
     plt.savefig("MAGN-T-REF.png", bbox_inches="tight")
 
 
-run_loading([1.6])
-run_expectation([1.6])
+run_loading([i for i in np.arange(4.0, 6.0, 0.2)], dumping_format="a")
+run_expectation([i for i in np.arange(1.8, 6.0, 0.2)])
 
-# run_appending([2.0])

@@ -8,14 +8,16 @@ import os,sys
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
 # os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed/"
-os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt12x12/epoch{sys.argv[1]}_sample{sys.argv[2]}")
-dataset_dir = "ising-latt12x12-T4.0"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed_symmetrized/{sys.argv[5]}"
+os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt{sys.argv[4]}x{sys.argv[4]}/epoch{sys.argv[1]}_{sys.argv[2]}")
+dataset_dir = f"data/ising-latt{sys.argv[4]}x{sys.argv[4]}-T{sys.argv[8]}"
+
 
 stage = "val"
 channels = 2
-seq_len = 12*12
-seq_dim = (12, 12)
+L = int(sys.argv[4])
+seq_len = L*L
+seq_dim = (L, L)
 ckpt = None
 import glob
 ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
@@ -24,7 +26,7 @@ if stage == "train":
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
-    batch_size = 8192*4
+    batch_size = 1024*8
     if ckpt is None: 
         raise Exception("ERROR:: ckpt not initiated")
     print("Validating with ckpt::", ckpt)
@@ -47,6 +49,7 @@ val_check_interval = None
 
 trainer = pl.Trainer(
     devices=1, num_nodes=1,
+    inference_mode=False,
     default_root_dir=os.environ["work_dir"],
     accelerator="gpu" if torch.cuda.is_available() else 'auto',
     max_steps=max_steps,
@@ -69,28 +72,30 @@ trainer = pl.Trainer(
     check_val_every_n_epoch=check_val_every_n_epoch,
     val_check_interval=val_check_interval,
     log_every_n_steps=1,
-    precision=16,
+    precision=64,
     strategy='ddp_find_unused_parameters_true'
 )
 
 class dataset_params():
-    def __init__(self, toy_seq_len, toy_seq_dim, toy_simplex_dim, dataset_dir):
+    def __init__(self, toy_seq_len, toy_seq_dim, toy_simplex_dim, dataset_dir, scale_magn = 1):
         self.toy_seq_len = toy_seq_len
         self.toy_seq_dim = toy_seq_dim
         self.toy_simplex_dim = toy_simplex_dim
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
-        self.kBT=float(sys.argv[3])
+        self.scale_magn = scale_magn
+        if stage == "val":
+            self.subset_size = batch_size
+        else:
+            self.subset_size = None
         
-dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
+dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir, scale_magn = 4)
 
 from utils.dataset import AlCuDataset, IsingDataset
-# dparams.dataset_dir = dataset_dir
+
 dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# train_ds = AlCuDataset(dparams)
+
 train_ds = IsingDataset(dparams)
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
 val_ds = IsingDataset(dparams)
 
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
@@ -98,40 +103,61 @@ val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_work
 # val_loader = None
 
 class Hyperparams():
-    def __init__(self, mode=None, hidden_dim=16, num_cnn_stacks=1, lr=5e-4, dropout=0.0, cls_free_guidance=False, clean_data=False, model="MLP"):
+    def __init__(self, mode=None, hidden_dim=16, num_cnn_stacks=1, lr=5e-4, dropout=0.0, clean_data=False, model="MLP"):
         self.hidden_dim = hidden_dim
         self.kernel_size = 3
         self.padding = 1
         self.dropout = dropout
-        self.cls_free_guidance = cls_free_guidance
+
+        self.cls_free_guidance = True
+        # self.uncond_model_ckpt = None
+        # self.uncond_model_ckpt = "logs-dir-ising/latt6x6T3.2/kernel3x3_timeembed/model-epoch=99-train_loss=0.34.ckpt"
+        self.uncond_model_ckpt = "logs-dir-ising/latt6x6T2.0/kernel3x3_timeembed_symmetrized/pretrain2/model-epoch=89-train_loss=0.16.ckpt"
+        # self.uncond_model_ckpt = "logs-dir-ising/latt6x6T2.4/kernel3x3_timeembed_symmetrized/pretrain2/model-epoch=219-train_loss=0.19.ckpt"
+
         self.clean_data = clean_data
         self.num_cnn_stacks = num_cnn_stacks
         self.lr = lr
         self.wandb = False
-        self.seq_dim = seq_dim
+        self.seq_dim = (6,6)
         self.channels = channels
         self.model = model
         self.mode = mode
         self.gamma_focal = 2.
-        self.prefactor_RC = 0.05
-        self.prefactor_CE = 1.
+        self.prefactor_RC = 1.
+        self.prefactor_CE = 0.05
+        self.alpha = 1.
 
-    def simplex_params(self, cls_expanded_simplex=False, time_scale=2):
-        self.cls_expanded_simplex = cls_expanded_simplex
+    def simplex_params(self, time_scale=2):
+        self.cls_free_noclass_ratio = 0.0
         self.time_scale = time_scale
-        self.alpha_max = 8
-        self.num_integration_steps = 20
-        self.flow_temp = 1.
+        self.alpha_max = int(sys.argv[7])
+        self.num_integration_steps = int(sys.argv[6])
+        self.flow_temp = 1.0
         self.allow_nan_cfactor = True
 
-loss_mode = "RC-focal"
+        self.prior_pseudocount = 0.
+        self.score_free_guidance = False
+        self.guidance_scale = float(sys.argv[9])
+        
+        self.cls_guidance = False
+        self.analytic_cls_score = True
+        self.cls_expanded_simplex = False
+        self.scale_cls_score = False
+
+
+loss_mode = None
 print("extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.simplex_params()
 
 from lightning_modules.simplex_module import simplexModule
-model = simplexModule(channels, num_cls=2, hyperparams=hparams)
+# toy_data_dir = "logs-dir-ising/latt6x6T2.0/kernel3x3_timeembed_symmetrized/clsfreeG/val_baseline_latt6x6/epoch236_IntStep80_AMax10_clsT2.0_scoreG1.0"
+# toy_data_dir = "data/ising-latt12x12-T2.0/val"
+# toy_dparams = dataset_params(12*12, (12,12), 2, toy_data_dir, scale_magn = 4)
+# toy_ds = IsingDataset(toy_dparams)
+model = simplexModule(channels, num_cls=72, hyperparams=hparams, toy_data=None)
 
 if stage == "train":
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt)

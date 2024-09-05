@@ -115,12 +115,12 @@ def sample_cond_prob_path(args, seq, alphabet_size):
     return xt, alphas
 
 def expand_simplex(xt, alphas, prior_pseudocount):
-    prior_weights = (prior_pseudocount / (alphas + prior_pseudocount - 1))[:, None, None]
+    prior_weights = (prior_pseudocount / (alphas + prior_pseudocount - 1))[:, None, None, None]
     return torch.cat([xt * (1 - prior_weights), xt * prior_weights], -1), prior_weights
 
 
 class DirichletConditionalFlow:
-    def __init__(self, K=20, alpha_min=1, alpha_max=100, alpha_spacing=0.01):
+    def __init__(self, K=20, alpha_min=1, alpha_max=20, alpha_spacing=0.001):
         self.alphas = np.arange(alpha_min, alpha_max + alpha_spacing, alpha_spacing)
         self.beta_cdfs = []
         self.bs = np.linspace(0, 1, 1000)
@@ -133,7 +133,8 @@ class DirichletConditionalFlow:
     def c_factor(self, bs, alpha):
         out1 = scipy.special.beta(alpha, self.K - 1)
         out2 = np.where(bs < 1, out1 / ((1 - bs) ** (self.K - 1)), 0)
-        out = np.where(bs > 0, out2 / (bs ** (alpha - 1)), 0)
+        # out = np.where(bs > 0, out2 / (bs ** (alpha - 1)), 0)
+        out = np.where(bs**(alpha - 1) > 1e-7, out2 / (bs ** (alpha - 1)), 0)
         I_func = self.beta_cdfs_derivative[np.argmin(np.abs(alpha - self.alphas))]
         interp = -np.interp(bs, self.bs, I_func)
         final = interp * out

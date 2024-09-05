@@ -7,7 +7,7 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.0/kernel3x3_timeembed/"
+os.environ["MODEL_DIR"]=f"logs-gaussian-ising/latt6x6T2.2/kernel3x3_timeembed_symmetrized/finetune6"
 os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt6x6/epoch{sys.argv[1]}_sample{sys.argv[2]}")
 dataset_dir = "ising-latt6x6-T4.0"
 
@@ -108,6 +108,9 @@ class Hyperparams():
         self.channels = channels
         self.model = model
         self.mode = mode
+        self.alpha = 1.
+        self.prefactor_CE=1.
+        self.prefactor_RC=1.
 
     def simplex_params(self, cls_expanded_simplex=False, time_scale=2, time0_scale = 1.0):
         self.cls_expanded_simplex = cls_expanded_simplex
