@@ -2,31 +2,28 @@
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
+from utils.parsing import parse_train_args
+args = parse_train_args()
+
 import torch
 import os,sys
+
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
-
-# os.environ["MODEL_DIR"]="logs-local"
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T{sys.argv[3]}/kernel3x3_timeembed_symmetrized/{sys.argv[5]}"
-os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt{sys.argv[4]}x{sys.argv[4]}/epoch{sys.argv[1]}_{sys.argv[2]}")
-dataset_dir = f"data/ising-latt{sys.argv[4]}x{sys.argv[4]}-T{sys.argv[8]}"
 
 
 stage = "val"
 channels = 2
-L = int(sys.argv[4])
-seq_len = L*L
-seq_dim = (L, L)
-ckpt = None
-import glob
-ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={sys.argv[1]}-train_loss=*"))[0]
+L = args.validation_lattice_size
+seq_len = args.validation_lattice_size**2
+seq_dim = (args.validation_lattice_size, args.validation_lattice_size)
+ckpt = args.ckpt
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
         print("Starting from ckpt:: ", ckpt)
 elif stage == "val":
-    batch_size = 1024
+    batch_size = args.validation_batch_size
     if ckpt is None: 
         raise Exception("ERROR:: ckpt not initiated")
     print("Validating with ckpt::", ckpt)
@@ -89,17 +86,19 @@ class dataset_params():
         else:
             self.subset_size = None
         
-dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
+dparams = dataset_params(seq_len, seq_dim, channels, args.dataset_dir, scale_magn = args.scale_magn)
 
 from utils.dataset import AlCuDataset, IsingDataset
-# dparams.dataset_dir = dataset_dir
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# train_ds = AlCuDataset(dparams)
-train_ds = IsingDataset(dparams)
-dparams.dataset_dir = os.path.join(dataset_dir, "val")
-# val_ds = AlCuDataset(dparams)
-val_ds = IsingDataset(dparams)
 
+dparams.dataset_dir = os.path.join(args.dataset_dir, "val")
+
+train_ds = IsingDataset(dparams)
+val_ds = IsingDataset(dparams)
+if not args.clsfree_guidance_dataset:
+    val_ds.make_custom_target_class()
+else:
+    if args.clsfree_guidance_dataset_file is not None:
+        val_ds.read_target_class(args.clsfree_guidance_dataset_file, seq_L=args.clsfree_guidance_dataset_lattice_size, scale_magn=int((args.clsfree_guidance_dataset_lattice_size/6)**2), subset_size=batch_size)
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers, drop_last=True)
 # val_loader = None
@@ -111,50 +110,68 @@ class Hyperparams():
         self.padding = 1
         self.dropout = dropout
 
-        self.cls_free_guidance = False
-        self.uncond_model_ckpt = None
-        # self.uncond_model_ckpt = "logs-dir-ising/latt6x6T3.2/kernel3x3_timeembed/model-epoch=99-train_loss=0.34.ckpt"
-        self.uncond_model_ckpt = "logs-dir-ising/latt6x6T2.0/kernel3x3_timeembed_symmetrized/pretrain2/model-epoch=95-train_loss=0.16.ckpt"
+        self.cls_free_guidance = args.cls_free_guidance
+        self.guidance_op = "energy-magnetization"
+        self.uncond_model_ckpt = args.uncond_model_ckpt
 
         self.clean_data = clean_data
         self.num_cnn_stacks = num_cnn_stacks
         self.lr = lr
         self.wandb = False
-        self.seq_dim = (6,6)
+        self.seq_dim = (args.validation_lattice_size,args.validation_lattice_size)
         self.channels = channels
         self.model = model
         self.mode = mode
         self.gamma_focal = 2.
-        self.prefactor_RC = 1.
-        self.prefactor_CE = 0.05
-        self.alpha = 1.
+        self.prefactor_CE = 1.
+        if mode is not None and "RC" in mode:
+            self.prefactor_RC = 1.
+            self.prefactor_CE = 0.01
+        if mode is not None and "Energy" in mode:
+            self.prefactor_EKL = 1.
+            self.prefactor_CE = 0.01
+            self.EKLloss_temperature = 500
+            self.prefactor_eloss_mse = 0.1
+        self.prefactor_symm = 1.
+    
 
     def simplex_params(self, time_scale=2):
-        self.cls_free_noclass_ratio = 0.3
+        self.enforce_symm = False
+        
+        self.cls_free_noclass_ratio = 0.0
         self.time_scale = time_scale
-        self.alpha_max = int(sys.argv[7])
-        self.num_integration_steps = int(sys.argv[6])
+        self.alpha_max = args.alpha_max
+        self.num_integration_steps = args.num_integration_steps
         self.flow_temp = 1.0
         self.allow_nan_cfactor = True
 
         self.prior_pseudocount = 0.
         self.score_free_guidance = False
-        self.guidance_scale = float(sys.argv[9])
+        self.guidance_scale = args.guidance_scale
+        self.shuffle_cls_freq = args.shuffle_cls_freq
         
-        self.cls_guidance = True
+        self.cls_guidance = args.cls_guidance
         self.analytic_cls_score = True
         self.cls_expanded_simplex = False
         self.scale_cls_score = False
 
+        self.dump_freq = args.dump_freq
 
-loss_mode = None
-print("extra loss::", loss_mode)
+loss_mode = "Energy"
+print(">>> Using extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.simplex_params()
 
 from lightning_modules.simplex_module import simplexModule
-model = simplexModule(channels, num_cls=72, hyperparams=hparams, toy_data=val_ds)
+if args.cls_guidance_dataset_dir is not None:
+    toy_data_dir = args.cls_guidance_dataset_dir
+    toy_dparams = dataset_params(6*6, (6,6), 2, toy_data_dir, scale_magn = args.scale_magn)
+    toy_ds = IsingDataset(toy_dparams)
+else:
+    toy_ds = None
+
+model = simplexModule(channels, 72, 32, hyperparams=hparams, toy_data=toy_ds)
 
 if stage == "train":
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt)

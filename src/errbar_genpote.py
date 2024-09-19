@@ -336,9 +336,9 @@ def plot_kBT_expectation(T3):
     plt.figure()
     idx_order_ref = np.argsort(Expectation_E_REF[:,0])
     plt.scatter(Expectation_E_REF[:,0][idx_order_ref], Expectation_E_REF[:,1][idx_order_ref], c="k")
-    # idx_select = np.where((np.abs(Expectation_E[:,0])>=min(T1,T2)) & (np.abs(Expectation_E[:,0])<=max(T1,T2)))[0]
-    idx_select = np.where((np.abs(Expectation_E[:,0])<=max(T1,T2)))[0]
-    # idx_select = np.arange(Expectation_E.shape[0])
+
+    idx_select = np.where(Expectation_E[:,0] in [T1,T2])[0]
+
     if T3 < 3:
         plt.errorbar(Expectation_E[idx_select,0], Expectation_E[idx_select,1], yerr=Expectation_E[idx_select,2], c="blue")
     elif T3 > 4:

@@ -44,7 +44,7 @@ def readlog(dir, trainlosskeyword="train_loss"):
 
     return alltrainlosses_baseline, alltrainsteps_baseline, allvallosses_baseline, allvalsteps_baseline
 
-def plot_3losses(dir_dir_b1024, k2 = "train_RCLoss", k3 = "train_CELoss", after_epoch=None):
+def plot_3losses(dir_dir_b1024, k2 = "train_RCLoss", k3 = "train_eneergy_mseloss", after_epoch=None):
     after_idx = 0
     plt.rcParams["figure.figsize"] = (17,5)
     fig = plt.figure()
@@ -102,5 +102,5 @@ def plot_1losses(dir_dir_b1024, after_epoch=None):
     plt.savefig(os.path.join(dir_dir_b1024, "losses"), bbox_inches="tight")
     plt.show()
 
-dir = f"logs-dir-ising/latt6x6T{sys.argv[1]}/kernel3x3_timeembed_symmetrized/{sys.argv[3]}"
-plot_3losses(dir, after_epoch=sys.argv[2])
+dir = f"logs-dir-ising/latt6x6T{sys.argv[1]}/kernel3x3_timeembed_symmetrized/{sys.argv[2]}"
+plot_3losses(dir, after_epoch=int(sys.argv[3]))

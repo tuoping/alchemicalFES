@@ -243,12 +243,13 @@ class CNNModel3D(nn.Module):
         return feat
 
 class CNNModel2D(nn.Module):
-    def __init__(self, args, alphabet_size, num_cls, classifier=False):
+    def __init__(self, args, alphabet_size, num_cls, num_eemb, classifier=False):
         super(CNNModel2D, self).__init__()
         self.alphabet_size = alphabet_size
         self.args = args
         self.classifier = classifier
         self.num_cls = num_cls
+        self.num_eemb = num_eemb
         
         inp_size = self.alphabet_size
 
@@ -282,9 +283,11 @@ class CNNModel2D(nn.Module):
             print("Using class free guidance")
             self.cls_embedder = nn.Embedding(num_embeddings=self.num_cls + 1, embedding_dim=args.hidden_dim)
             self.cls_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
+            self.e_embedder = nn.Embedding(num_embeddings=self.num_eemb + 1, embedding_dim=args.hidden_dim)
+            self.e_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
     
     # @profile
-    def forward(self, seq, t, cls = None, return_embedding=False):
+    def forward(self, seq, t, cls = None, e=None, return_embedding=False):
         if self.args.clean_data:
             # feat = feat.permute(0, 2, 1)
             feat = seq.permute(0,3,1,2)
@@ -300,15 +303,17 @@ class CNNModel2D(nn.Module):
         if self.args.cls_free_guidance and not self.classifier:
             cls_emb = torch.zeros([seq.shape[0], self.args.hidden_dim]).to(seq.device)
             if (cls > self.num_cls).any():
+                print("cls.max(), cls.min() = ", cls.max(), cls.min())
                 raise Exception("cls value out of range")
             cls_emb[torch.where(cls<=self.num_cls)] = self.cls_embedder(cls[torch.where(cls<=self.num_cls)])
+            e_emb = self.e_embedder(e)
 
         for i in range(self.num_layers):
             h = self.dropout(feat)
             if not self.args.clean_data:
                 h = h + self.time_layers[i](time_emb)[:, :, None, None]
             if self.args.cls_free_guidance and not self.classifier:
-                h = h + (self.cls_layers[i](cls_emb))[:, :, None, None]
+                h = h + (self.cls_layers[i](cls_emb))[:, :, None, None] + (self.e_layers[i](e_emb))[:, :, None, None]
             h = self.norms[i]((h).permute(0,2,3,1))
             h = F.relu(self.convs[i](h.permute(0,3,1,2)))
             if h.shape == feat.shape:

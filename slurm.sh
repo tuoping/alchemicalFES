@@ -3,11 +3,11 @@
 #SBATCH --nodes 1
 #SBATCH --ntasks-per-node 1
 #SBATCH --gres=gpu:1
-#SBATCH --partition gpu100
+#SBATCH --partition gpu
 #SBATCH --mem-per-gpu=24g
 #SBATCH --time=48:00:00
 #SBATCH --constraint=bookworm
-#SBATCH --exclude=
+#SBATCH --exclude=gpu113,gpu118,gpu119,gpu123,gpu124,gpu125,gpu127,gpu137,gpu138,gpu139,gpu145,gpu144,gpu148,gpu150
 
 # module purge
 # module load openmpi

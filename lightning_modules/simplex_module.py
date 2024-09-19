@@ -41,7 +41,6 @@ def sample_cond_prob_path_2d(hyperparams, seq, channels):
     xt = torch.distributions.Dirichlet(alphas).sample()
     return xt, t+1
 
-
 class IsingGNN(nn.Module):
     def __init__(self, L):
         super(IsingGNN, self).__init__()
@@ -84,7 +83,7 @@ class IsingGNN(nn.Module):
 
     def forward_soft(self, x):
         B, seq_len, K = x.shape
-        assert seq_len == self.L**2
+        assert seq_len == self.L**2, "x.shape[1] != self.L**2 : %d != %d"%(seq_len, self.L**2)
         edge_index = self.edge_index.to(x.device)
         # Get the spin values for the edge pairs
         spin_values = torch.argmax(x, dim=-1) * 2 - 1  # Convert one-hot encoding to -1, 1
@@ -221,9 +220,9 @@ from copy import deepcopy
 from utils.esm import upgrade_state_dict
 
 class simplexModule(GeneralModule):
-    def __init__(self, channels, num_cls, hyperparams, toy_data=None):
+    def __init__(self, channels, num_cls, num_e, hyperparams, toy_data=None):
         super().__init__(hyperparams)
-        self.load_model(channels, num_cls, hyperparams)
+        self.load_model(channels, num_cls, num_e, hyperparams)
         self.condflow = DirichletConditionalFlow(K=self.model.alphabet_size, alpha_spacing=0.001, alpha_max=hyperparams.alpha_max)
         self.hyperparams = hyperparams
         self.RCL = RCLoss(RC)
@@ -231,11 +230,11 @@ class simplexModule(GeneralModule):
         self.loaded_uncond_model = False
         self.toy_data = toy_data
 
-    def load_model(self, channels, num_cls, hyperparams):
+    def load_model(self, channels, num_cls, num_e, hyperparams):
         if hyperparams.model == "CNN3D":
             self.model = CNNModel3D(hyperparams, channels, num_cls)
         elif hyperparams.model == "CNN2D":
-            self.model = CNNModel2D(hyperparams, channels, num_cls)
+            self.model = CNNModel2D(hyperparams, channels, num_cls, num_e)
         elif hyperparams.model == "MLP":
             self.model = MLPModel(hyperparams, channels, num_cls)
         else:
@@ -245,7 +244,7 @@ class simplexModule(GeneralModule):
 
 
     def general_step(self, batch, batch_idx=None):
-        seq, cls = batch
+        seq, cls, energy, energy_op = batch
         ### Data augmentation by flipping the binary choices
         # if self.stage == "train":
         #     seq_symm = -seq+1
@@ -260,10 +259,22 @@ class simplexModule(GeneralModule):
             xt, t = sample_cond_prob_path_2d(self.hyperparams, seq, self.model.alphabet_size)
         shape = seq.shape
         if self.hyperparams.cls_free_guidance:
-            # cls_inp = torch.where(torch.rand(B, device=self.device) >= self.hyperparams.cls_free_noclass_ratio, cls.squeeze(), 73) # set fraction of the classes to the unconditional class
-            logits = self.model(xt, t, cls=cls)
-            # cls_inp_symm = torch.where(torch.rand(B, device=self.device) >= self.hyperparams.cls_free_noclass_ratio, H*W*2-cls.squeeze(), 73) # set fraction of the classes to the unconditional class
-            logits_symm = self.model(1-xt, t, cls=cls.max()-cls)
+            if self.hyperparams.guidance_op == "energy-magnetization":
+                if self.model.num_eemb+1 == 33:
+                    energy_op_inp = torch.where(torch.rand(B, device=self.device) >= self.hyperparams.cls_free_noclass_ratio, energy_op.squeeze(), 32) # set fraction of the classes to the unconditional class
+                elif self.model.num_eemb+1 == 32:
+                    energy_op_inp = energy_op
+                else:
+                    raise Exception("Wrong model.num_eemb value: %d, compared to dataset e values within [%d, %d]"%(self.model.num_eemb+1, energy_op.min(), energy_op.max()))
+                logits = self.model(xt, t, cls=cls, e=energy_op_inp)
+                logits_symm = self.model(1-xt, t, cls=cls.max()-cls, e=energy_op_inp)
+            elif self.hyperparams.guidance_op == "magnetization":
+                # cls_inp = torch.where(torch.rand(B, device=self.device) >= self.hyperparams.cls_free_noclass_ratio, cls.squeeze(), 73) # set fraction of the classes to the unconditional class
+                logits = self.model(xt, t, cls=cls)
+                # cls_inp_symm = torch.where(torch.rand(B, device=self.device) >= self.hyperparams.cls_free_noclass_ratio, H*W*2-cls.squeeze(), 73) # set fraction of the classes to the unconditional class
+                logits_symm = self.model(1-xt, t, cls=cls.max()-cls)
+            else:
+                raise Exception("Unrecognized guidance order parameter")
         else:
             logits = self.model(xt, t)
             logits_symm = self.model(1-xt, t)
@@ -281,11 +292,39 @@ class simplexModule(GeneralModule):
             raise Exception("ERROR:: INF in: torch.log1p(-torch.exp(torch.nn.functional.log_softmax(logits_symm-logits_symm.max())))")
         if torch.isinf(torch.nn.functional.softmax(logits)).any():
             raise Exception("ERROR:: INF in: torch.nn.functional.softmax(logits)")
-        losses_sym = self.hyperparams.alpha* torch.nn.functional.kl_div(torch.nn.functional.log_softmax(torch.flip(logits_symm, [-1])), 
+        losses_sym = self.hyperparams.prefactor_symm* torch.nn.functional.kl_div(torch.nn.functional.log_softmax(torch.flip(logits_symm, [-1])), 
                                                                         torch.nn.functional.log_softmax(logits), log_target=True, reduction="none").sum(-1).reshape(B,-1)
         self.lg("symloss", losses_sym)
         losses = self.hyperparams.prefactor_CE* CELoss + losses_sym
-        if self.hyperparams.mode is not None and "RC" in self.hyperparams.mode:
+        if self.hyperparams.mode is not None and "Energy" in self.hyperparams.mode:
+            energy_pred = self.ising_model.forward_soft(logits.reshape(B,H*W,self.model.alphabet_size))
+            assert not torch.isinf(energy_pred).any()
+            EKLloss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(-energy_pred/self.hyperparams.EKLloss_temperature, dim=0), torch.nn.functional.log_softmax(-energy/self.hyperparams.EKLloss_temperature, dim=0), log_target=True, reduction="none")*B
+            MSEloss = torch.abs(energy_pred-energy)
+            # Eloss = (energy_pred - energy)**2
+            self.lg("energy_klloss", EKLloss)
+            self.lg("eneergy_mseloss", MSEloss)
+            losses += EKLloss.mean()*self.hyperparams.prefactor_EKL + MSEloss.mean()*self.hyperparams.prefactor_eloss_mse
+            ### DEBUG
+            if self.stage == "val" and B <= 1024:
+                np.save(os.path.join(os.environ["work_dir"], "EKLloss"), EKLloss.detach().cpu().numpy())
+                np.save(os.path.join(os.environ["work_dir"], "energy"), energy.detach().cpu().numpy())
+                np.save(os.path.join(os.environ["work_dir"], "energy_pred"), energy_pred.detach().cpu().numpy())
+                np.save(os.path.join(os.environ["work_dir"], "logp_diff"), (torch.nn.functional.log_softmax(-energy_pred/self.hyperparams.EKLloss_temperature, dim=0)-torch.nn.functional.log_softmax(-energy/self.hyperparams.EKLloss_temperature, dim=0)).detach().cpu().numpy())
+                np.save(os.path.join(os.environ["work_dir"], "p_data"), (torch.nn.functional.softmax(-energy/self.hyperparams.EKLloss_temperature, dim=0)).detach().cpu().numpy())
+                raise RuntimeError
+        if self.hyperparams.mode is not None and "Energy-EMD" in self.hyperparams.mode:
+            raise Exception("loss mode Energy-EMD is not implemented")
+            energy_pred = self.ising_model.forward_soft(logits.reshape(B,H*W,self.model.alphabet_size))
+            assert not torch.isinf(energy_pred).any()
+            p_pred = torch.nn.functional.softmax(-energy_pred+energy_pred.min())
+            p_seq = torch.nn.functional.softmax(-energy+energy.min())
+
+            Eloss = torch.nn.functional.kl_div(torch.nn.functional.log_softmax(-energy_pred/self.hyperparams.Eloss_temperature, dim=0), torch.nn.functional.log_softmax(-energy/self.hyperparams.Eloss_temperature, dim=0), log_target=True, reduction="none")*B
+            # Eloss = (energy_pred - energy)**2
+            self.lg("energyloss", Eloss)
+            losses += Eloss.mean()*self.hyperparams.prefactor_E
+        if self.hyperparams.mode is not None and ("RC" in self.hyperparams.mode or "RC-focal" in self.hyperparams.mode):
             ### Trainning by RC effectively trains a class-conditional model.
             xgrid = torch.linspace(-torch.prod(self.hyperparams.seq_dim), torch.prod(self.hyperparams.seq_dim), torch.prod(self.hyperparams.seq_dim)+1, device=logits.device)
             seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=self.model.alphabet_size).reshape(*shape, self.model.alphabet_size)
@@ -296,7 +335,7 @@ class simplexModule(GeneralModule):
             self.RCL.buffer2rc_trajs(norm_logits)
 
             rc_logits= self.RCL.kde(xgrid, 1., dump_hist=False)
-            if "focal" in self.hyperparams.mode:
+            if "RC-focal" in self.hyperparams.mode:
                 # rc_loss = (1-rc_logits)**2*(-rc_seq*torch.log(rc_logits+1e-12)).reshape(1,-1)
                 rc_loss = (1-rc_logits)**2*torch.nn.functional.cross_entropy(rc_logits.reshape([1,-1]), rc_seq.reshape([1,-1]), reduction='none')
             else:
@@ -317,7 +356,15 @@ class simplexModule(GeneralModule):
             if self.hyperparams.model == "CNN3D":
                 raise Exception("ERROR:: 3D inference is not implemented")
             elif self.hyperparams.model == "CNN2D":
-                logits_pred, _ = self.dirichlet_flow_inference_2d(seq, cls)
+                if self.hyperparams.cls_free_guidance:
+                    if self.hyperparams.guidance_op == "energy-magnetization":
+                        logits_pred, _ = self.dirichlet_flow_inference_2d(seq, cls, energy_op)
+                    elif self.hyperparams.guidance_op == "magnetization":
+                        logits_pred, _ = self.dirichlet_flow_inference_2d(seq, cls)
+                    else:
+                        raise Exception("Unrecognized guidance_op")
+                else:
+                    logits_pred, _ = self.dirichlet_flow_inference_2d(seq, cls)
             seq_pred = torch.argmax(logits_pred, dim=-1)
             np.save(os.path.join(os.environ["work_dir"], f"seq_val"), seq_pred.cpu())
             np.save(os.path.join(os.environ["work_dir"], f"logits_val"), logits_pred.cpu())
@@ -343,7 +390,7 @@ class simplexModule(GeneralModule):
         if self.hyperparams.cls_free_guidance and self.hyperparams.uncond_model_ckpt is not None and not self.loaded_uncond_model:
             hyperparams_uncond = deepcopy(self.hyperparams)
             hyperparams_uncond.cls_free_guidance = False
-            self.uncond_model = CNNModel2D(hyperparams_uncond, self.hyperparams.channels, 2)
+            self.uncond_model = CNNModel2D(hyperparams_uncond, self.hyperparams.channels, 2, 2)
             self.uncond_model.load_state_dict(upgrade_state_dict(
                 torch.load(self.hyperparams.uncond_model_ckpt, map_location=self.device)['state_dict'],
                 prefixes=['model.']))
@@ -469,7 +516,7 @@ class simplexModule(GeneralModule):
         return flow_guided
 
     @torch.no_grad()
-    def dirichlet_flow_inference_2d(self, seq, cls):
+    def dirichlet_flow_inference_2d(self, seq, cls, energy_op):
 
         B, H, W = seq.shape
         K = self.model.alphabet_size
@@ -483,20 +530,39 @@ class simplexModule(GeneralModule):
         for i, (s, t) in enumerate(zip(t_span[:-1], t_span[1:])):
             # xt_expanded, prior_weights = expand_simplex(xt, s[None].expand(B), self.hyperparams.prior_pseudocount)
             if torch.rand(1) > (1-self.hyperparams.shuffle_cls_freq):
-                logits = self.model(xt, t=s[None].expand(B), cls=cls[torch.randperm(cls.size(0))])
+                if not self.hyperparams.enforce_symm:
+                    logits = self.model(xt, t=s[None].expand(B), cls=cls[torch.randperm(B)], e=energy_op[torch.randperm(B)])
+                else:
+                    logits = self.model(xt[:B//2], t=s[None].expand(B//2), cls=cls[:B//2][torch.randperm(B//2)], e=energy_op[:B//2][torch.randperm(B//2)])
+                    logits = torch.cat([torch.flip(logits, [1]), logits], dim=0)
+                # raise Exception("Shuffling")
             else:
-                logits = self.model(xt, t=s[None].expand(B), cls=cls)
-            ### TODO: something wrong with the following symmetric prediction
-            # logits_symm = self.model(1-xt, t=s[None].expand(B), cls=H*W*2-cls)
-            # logits = torch.flip(logits_symm, [-1])*0.5+logits*0.5
+                if not self.hyperparams.enforce_symm:
+                    logits = self.model(xt[:B], t=s[None].expand(B), cls=cls[:B], e=energy_op[:B])
+                else:
+                    logits = self.model(xt[:B//2], t=s[None].expand(B//2), cls=cls[:B//2], e=energy_op[:B//2])
+                    logits = torch.cat([torch.flip(logits, [1]), logits], dim=0)
             if self.hyperparams.score_free_guidance or not self.hyperparams.cls_free_guidance:
                 flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
             else:
                 # probs_cond = torch.nn.functional.softmax(logits.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
                 if self.hyperparams.uncond_model_ckpt is not None:
-                    logits_uncond = self.uncond_model(xt.float(), t=s[None].expand(B).float()).double()
+                    if not self.hyperparams.enforce_symm:
+                        logits_uncond = self.uncond_model(xt.float(), t=s[None].expand(B).float()).double()
+                    else:
+                        ### TODO: Something wrong with the following symmetric prediction,
+                        ## either the model can't do this because not trained with symm loss,
+                        ## or symm op seperately on cond and uncond models doesn't work.
+                        ## Can consider putting the enforce_symm op to after the score guidance.
+                        raise Exception("Score guided generation doesn't work with enforce_symm == True")
+                        logits_uncond = self.uncond_model(xt[:B//2].float(), t=s[None].expand(B//2).float()).double()
+                        logits_uncond = torch.cat([torch.flip(logits_uncond, [1]), logits_uncond], dim=0)
                 else:
-                    logits_uncond = self.model(xt, t=s[None].expand(B), cls=torch.ones(B, device=self.device).to(torch.int64)*(73))
+                    if not self.hyperparams.enforce_symm:
+                        logits_uncond = self.model(xt, t=s[None].expand(B), cls=torch.ones(B, device=self.device).to(torch.int64)*(73))
+                    else:
+                        logits_uncond = self.model(xt[:B//2], t=s[None].expand(B//2), cls=torch.ones(B//2, device=self.device).to(torch.int64)*(73))
+                        logits_uncond = torch.cat([torch.flip(logits_uncond, [1]), logits_uncond], dim=0)
                 # probs_uncond = torch.nn.functional.softmax(logits_uncond.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
                 flow_probs = self.get_cls_free_guided_flow(xt, s+1e-4, logits_uncond.permute(0,2,3,1), logits.permute(0,2,3,1))
                 
@@ -536,8 +602,10 @@ class simplexModule(GeneralModule):
             if not torch.allclose((xt.reshape(B,-1,K)).sum(2), torch.ones((B, H*W), device=self.device), atol=1e-4) or not (xt >= 0).all():
                 print(f'WARNING@time{s}: xt.min(): {xt.min()}. Some values of xt do not lie on the simplex. There are we are {(xt<0).sum()} negative values in xt of shape {xt.shape} that are negative. We are projecting them onto the simplex.')
                 xt = simplex_proj(xt.reshape(B,-1)).reshape(B,H,W,K)
-            np.save(os.path.join(os.environ["work_dir"], f"logits_val_inttime{t}"), xt.cpu().detach().numpy())
-            # np.save(os.path.join(os.environ["work_dir"], f"flowprobs_val_inttime{t}"), flow_probs.cpu().detach().numpy())
+            if (i+1) % self.hyperparams.dump_freq == 0:
+                np.save(os.path.join(os.environ["work_dir"], f"logits_val_inttime{t}"), xt.cpu().detach().numpy())
+                # np.save(os.path.join(os.environ["work_dir"], f"flowprobs_val_inttime{t}"), flow_probs.cpu().detach().numpy())
+        np.save(os.path.join(os.environ["work_dir"], f"logits_val_inttime{t_span[-1]}"), xt.cpu().detach().numpy())
                
         return xt, x0
 
