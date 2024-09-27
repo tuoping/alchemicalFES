@@ -69,8 +69,7 @@ trainer = pl.Trainer(
     check_val_every_n_epoch=check_val_every_n_epoch,
     val_check_interval=val_check_interval,
     log_every_n_steps=1,
-    precision=64,
-    strategy='ddp_find_unused_parameters_true'
+    precision="32"
 )
 
 class dataset_params():
@@ -88,7 +87,7 @@ class dataset_params():
         
 dparams = dataset_params(seq_len, seq_dim, channels, args.dataset_dir, scale_magn = args.scale_magn)
 
-from utils.dataset import AlCuDataset, IsingDataset
+from utils.dataset import IsingDataset
 
 dparams.dataset_dir = os.path.join(args.dataset_dir, "val")
 
@@ -101,7 +100,6 @@ else:
         val_ds.read_target_class(args.clsfree_guidance_dataset_file, seq_L=args.clsfree_guidance_dataset_lattice_size, scale_magn=int((args.clsfree_guidance_dataset_lattice_size/6)**2), subset_size=batch_size)
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
 val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers, drop_last=True)
-# val_loader = None
 
 class Hyperparams():
     def __init__(self, mode=None, hidden_dim=16, num_cnn_stacks=1, lr=5e-4, dropout=0.0, clean_data=False, model="MLP"):
@@ -110,7 +108,9 @@ class Hyperparams():
         self.padding = 1
         self.dropout = dropout
 
-        self.cls_free_guidance = args.cls_free_guidance
+        self.cls_free_guidance = args.clsfree_guidance
+        self.probability_tilt = args.probability_tilt
+        self.probability_tilt_scheduled = args.probability_tilt_scheduled
         self.guidance_op = "energy-magnetization"
         self.uncond_model_ckpt = args.uncond_model_ckpt
 
@@ -157,7 +157,7 @@ class Hyperparams():
 
         self.dump_freq = args.dump_freq
 
-loss_mode = "Energy"
+loss_mode = ["Energy"]
 print(">>> Using extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
@@ -171,9 +171,16 @@ if args.cls_guidance_dataset_dir is not None:
 else:
     toy_ds = None
 
-model = simplexModule(channels, 72, 32, hyperparams=hparams, toy_data=toy_ds)
+# model = simplexModule(channels, 72, 32, hyperparams=hparams, toy_data=toy_ds).load_from_checkpoint(ckpt, strict=False)
+
+model = simplexModule.load_from_checkpoint(
+    checkpoint_path=ckpt,
+    strict=False,  # if needed
+    hyperparams=hparams,
+    # Provide any additional arguments if required
+)
 
 if stage == "train":
-    trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt)
+    trainer.fit(model, train_loader, val_loader)
 else:
-    trainer.validate(model, val_loader, ckpt_path=ckpt)
+    trainer.validate(model, val_loader)

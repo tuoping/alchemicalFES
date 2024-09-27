@@ -78,17 +78,16 @@ class IsingDataset(torch.utils.data.Dataset):
         self.seqs[torch.where(self.seqs == -1)] = 0
         # self.clss = torch.full_like(self.seqs, 0).to(device="cuda", dtype=torch.int64)
         # self.clss = self.seqs.clone()
-        if self.seq_len == 36:
-            self.energy = ising_boltzman_prob(self.seqs)
-            assert not torch.isinf(torch.exp((-self.energy+self.energy.min())/3.2)).any(), "max(reduced energy)=%f"(((-self.energy+self.energy.min())/3.2).max())
-            assert (self.energy % 4 == 0).all()
-            assert self.energy.max() <= 52
-            self.energy_op = ((self.energy+72)//4).to(torch.int64)
+        # if self.seq_len == 36:
+        self.energy = ising_boltzman_prob(self.seqs)
+        assert not torch.isinf(torch.exp((-self.energy+self.energy.min())/3.2)).any(), "max(reduced energy)=%f"(((-self.energy+self.energy.min())/3.2).max())
+        assert (self.energy % 4 == 0).all()
+        assert self.energy.max()//args.scale_magn <= 52
+        self.energy_op = ((self.energy//args.scale_magn+72)//4).to(torch.int64)
 
         
         self.magn_cls = RC(torch.nn.functional.one_hot(self.seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1,*args.toy_seq_dim, self.alphabet_size), device=device).to(device=device).reshape(-1)
         self.magn_cls = (self.magn_cls // args.scale_magn).to(torch.int64)
-        self.magn_cls = self.magn_cls
 
 
     def read_target_class(self, dataset_file, seq_L, scale_magn, subset_size):
@@ -97,19 +96,23 @@ class IsingDataset(torch.utils.data.Dataset):
         np.random.shuffle(all_data)
         all_data = torch.from_numpy(all_data[:subset_size])
         toy_seq_dim = (seq_L, seq_L)
+        assert seq_L == all_data.shape[1] or (seq_L**2 == all_data.shape[1] and len(all_data.shape) == 2)
 
         target_seqs = all_data.reshape(-1,*toy_seq_dim).to(device=self.seqs.device, dtype=torch.int64)
         target_seqs[torch.where(target_seqs == -1)] = 0
 
         self.magn_cls = RC(torch.nn.functional.one_hot(target_seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1,*toy_seq_dim, self.alphabet_size), device=self.seqs.device).to(device=self.seqs.device).reshape(-1)
         self.magn_cls = (self.magn_cls // scale_magn).to(torch.int64)
-        self.magn_cls = self.magn_cls
 
         if seq_L != 6:
-            raise Exception("Lattice size of the target class = %d, check if this is what you want."%seq_L)
+            print("WARNING:: Lattice size of the target class = %d, check if this is what you want."%seq_L)
         self.energy = ising_boltzman_prob(target_seqs)
         assert not torch.isinf(torch.exp((-self.energy+self.energy.min())/3.2)).any(), "max(reduced energy)=%f"(((-self.energy+self.energy.min())/3.2).max())
-        assert (self.energy % 4 == 0).all()
+        print("Target energy between ", self.energy.min(), self.energy.max())
+        self.energy = self.energy//scale_magn
+        print("Scaled target energy between ", self.energy.min(), self.energy.max())
+        print("Scaling factor = ", scale_magn)
+        # assert (self.energy % 4 == 0).all()
         assert self.energy.max() <= 52
         self.energy_op = ((self.energy+72)//4).to(torch.int64)
             
@@ -117,7 +120,7 @@ class IsingDataset(torch.utils.data.Dataset):
 
     def make_custom_target_class(self):
         print("WARNNING: using custom FM target dataset")
-        num_seq = self.seqs.shape[0]
+        B,H,W = self.seqs.shape
         ### Data ensemble for analytical conditional probability
         ### Toy setting 1: noisy
         # self.data_class1 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True)) for _ in range(num_seq)]).to(device)
@@ -126,7 +129,21 @@ class IsingDataset(torch.utils.data.Dataset):
         ### Toy setting 3: all spin down/noisy
         # probabilities = [0.9, 0.1]
         # self.data_class1 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True, p=probabilities)) for _ in range(num_seq)]).to(device)
-        
+        self.seqs = torch.zeros_like(self.seqs).to(self.seqs.device).to(torch.int64)
+        indices = [torch.randperm(H*W)[:int(H*W/2)] for i in range(self.seqs.shape[0])]
+        for i in range(len(indices)):
+            self.seqs[i].reshape(-1)[indices[i]] = 1
+        print(self.seqs.shape)
+        self.magn_cls = RC(torch.nn.functional.one_hot(self.seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1, H, W, self.alphabet_size), device=self.seqs.device).to(device=self.seqs.device).reshape(-1)
+        print(self.magn_cls)
+        self.magn_cls = (self.magn_cls//(H/6)**2).to(torch.int64)
+        print(self.magn_cls)
+        assert (self.magn_cls == 36).all(), "magn \in [%d %d]"%(self.magn_cls.min(), self.magn_cls.max())
+        self.energy = ising_boltzman_prob(self.seqs)
+        # self.energy_op = ((self.energy+72)//4).to(torch.int64)
+        self.energy_op = (torch.zeros_like(self.energy)).to(torch.int64)
+
+        '''
         ### Custom magn_guidance
         magn_cls_1 = torch.stack([torch.from_numpy(np.zeros(36*2)).to(torch.int64) for _ in range(num_seq//2)]).to(self.seqs.device).sum(-1)
         magn_cls_2 = torch.stack([torch.from_numpy(np.ones(36*2)).to(torch.int64) for _ in range(num_seq - num_seq//2)]).to(self.seqs.device).sum(-1)
@@ -136,6 +153,7 @@ class IsingDataset(torch.utils.data.Dataset):
         ### Custom energy_guidance
         self.energy = -72.*torch.ones(num_seq)
         self.energy_op = torch.zeros(num_seq).to(torch.int64)
+        '''
         pass
 
     def __len__(self):
@@ -144,48 +162,48 @@ class IsingDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.seqs[idx], self.magn_cls[idx], self.energy[idx], self.energy_op[idx]
     
+        
 
 
-class AlCuDataset(torch.utils.data.Dataset):
-    def __init__(self, args):
+class IsingDataset_mixT(torch.utils.data.Dataset):
+    def __init__(self, args, device="cuda"):
         super().__init__()
-        all_data = torch.from_numpy(np.load(f"data/{args.dataset_dir}/buffer_atypes.npy").reshape(-1,args.toy_simplex_dim,args.toy_seq_len))
-        print("loaded ", all_data.shape)
-        self.num_cls = 1
-        self.seq_len = args.toy_seq_len
-        self.alphabet_size = args.toy_simplex_dim
+        self.seqs_T = []
+        self.energy_T = []
+        self.energy_op_T = []
+        self.magn_cls_T = []
+        self.T = [3.2, 2.8, 2.4, 2.2, 2.0]
+        for T in [3.2, 2.8, 2.4, 2.2, 2.0]:
+            all_data = torch.from_numpy(np.load("data/ising-latt6x6-T4.0/latt6x6/buffer-S%.2f.npy"%T))
 
-        if args.cls_ckpt is not None:
-            distribution_dict = torch.load(os.path.join(os.path.dirname(args.cls_ckpt), 'toy_distribution_dict.pt'))
-            self.probs = distribution_dict['probs']
-            self.class_probs = distribution_dict['class_probs']
-        else:
-            # self.seqs_T0 = torch.softmax(torch.swapaxes(all_data, 1, 2), dim=2)
-            # if args.dataset_scaleTemp:
-            #     print("Rescaling dataset from 620K to 420K")
-            #     self.seqs = torch.pow(self.seqs_T0, 620.0/420.0)
-            # else:
-            #     self.seqs = self.seqs_T0
-    
-            self.seqs = torch.argmax(torch.swapaxes(all_data, 1, 2), dim=2).reshape(-1, *args.toy_seq_dim)
-            # self.clss = torch.argmax(torch.swapaxes(all_data, 1, 2), dim=2)
-            self.clss = torch.full_like(self.seqs, 0)
 
-            # from sklearn.cluster import KMeans
-            # est2 = KMeans(n_clusters=2)
-            # est2.fit(self.clss)
-            # counts_labels = Counter(est2.labels_)
-            # counts = torch.tensor([counts_labels[k] for k in [0,1]]).reshape(self.num_cls, 1,-1)
-            # self.probs = counts / counts.sum(dim=-1, keepdim=True)
-            # print("probs = ", self.probs)
+            print("loaded ", all_data.shape, all_data.dtype, args.dataset_dir)
+            self.num_cls = 2
+            self.seq_len = args.toy_seq_len
+            self.alphabet_size = args.toy_simplex_dim
+            
+            seqs = all_data.reshape(-1,*args.toy_seq_dim).to(device=device, dtype=torch.int64)
+            seqs[torch.where(seqs == -1)] = 0
+            self.seqs_T.append(seqs)
+            if self.seq_len == 36:
+                energy = ising_boltzman_prob(seqs)
+                self.energy_T.append(energy)
+                assert not torch.isinf(torch.exp((-energy+energy.min())/3.2)).any(), "max(reduced energy)=%f"(((-energy+energy.min())/3.2).max())
+                assert (energy % 4 == 0).all()
+                assert energy.max() <= 52
+                energy_op = ((energy+72)//4).to(torch.int64)
+                self.energy_op_T.append(energy_op)
+            
+            
+            magn_cls = RC(torch.nn.functional.one_hot(seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1,*args.toy_seq_dim, self.alphabet_size), device=device).to(device=device).reshape(-1)
+            magn_cls = (magn_cls // args.scale_magn).to(torch.int64)
+            self.magn_cls_T.append(magn_cls)
 
-            # self.class_probs = torch.softmax(torch.swapaxes(all_data, 1, 2), dim=2)
-
-            # distribution_dict = {'probs': self.probs, 'class_probs': self.class_probs}
-        # torch.save(distribution_dict, os.path.join(os.environ["MODEL_DIR"], 'toy_distribution_dict.pt' ))
 
     def __len__(self):
-        return len(self.seqs)
+        return len(self.seqs_T[0])
 
     def __getitem__(self, idx):
-        return self.seqs[idx], self.clss[idx]
+        ridxT = torch.randperm(len(self.T))[0]
+        return self.seqs_T[ridxT][idx], self.magn_cls_T[ridxT][idx], self.energy_T[ridxT][idx], self.energy_op_T[ridxT][idx], self.T[ridxT]
+    

@@ -30,7 +30,9 @@ def parse_train_args():
     parser.add_argument("--cls_guidance", action="store_true")
     parser.add_argument("--cls_guidance_dataset_dir", type=str, default=None)
 
-    parser.add_argument("--cls_free_guidance", type=bool, default=True)
+    parser.add_argument("--clsfree_guidance", action="store_true")
+    parser.add_argument("--probability_tilt", action="store_true")
+    parser.add_argument("--probability_tilt_scheduled", action="store_true")
     parser.add_argument("--clsfree_guidance_dataset", action='store_true')
     parser.add_argument("--clsfree_guidance_dataset_file", type=str, default=None)
     parser.add_argument("--clsfree_guidance_dataset_lattice_size", type=int, default=6)
