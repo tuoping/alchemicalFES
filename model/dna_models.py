@@ -308,6 +308,7 @@ class CNNModel2D(nn.Module):
             cls_emb[torch.where(cls<=self.num_cls)] = self.cls_embedder(cls[torch.where(cls<=self.num_cls)])
             e_emb = self.e_embedder(e)
 
+
         for i in range(self.num_layers):
             h = self.dropout(feat)
             if not self.args.clean_data:
