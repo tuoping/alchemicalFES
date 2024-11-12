@@ -45,29 +45,17 @@ def RC(logits, device="cuda"):
 class IsingDataset(torch.utils.data.Dataset):
     def __init__(self, args, device="cuda"):
         super().__init__()
+
+        if isinstance( args.dataset_dir, list):
+            all_data = [np.load("%s/buffer.npy"%(d)) for d in args.dataset_dir]
+            all_data = np.concatenate(all_data)
+        else:
+            all_data = np.load("%s/buffer.npy"%(args.dataset_dir))
+        np.random.shuffle(all_data)
         if args.subset_size is not None:
-            if isinstance( args.dataset_dir, list):
-                all_data = None
-                for d in args.dataset_dir:
-                    if all_data is None:
-                        all_data = np.load("%s/buffer.npy"%(d))
-                    else:
-                        all_data = np.concatenate([all_data, np.load("%s/buffer.npy"%(d))], axis=0)
-            else:
-                all_data = np.load("%s/buffer.npy"%(args.dataset_dir))
-            np.random.shuffle(all_data)
             all_data = torch.from_numpy(all_data[:args.subset_size])
         else:
-            if isinstance( args.dataset_dir, list):
-                all_data = None
-                for d in args.dataset_dir:
-                    if all_data is None:
-                        all_data = np.load("%s/buffer.npy"%(d))
-                    else:
-                        all_data = np.concatenate([all_data, np.load("%s/buffer.npy"%(d))], axis=0)
-                all_data = torch.from_numpy(all_data)
-            else:
-                all_data = torch.from_numpy(np.load("%s/buffer.npy"%(args.dataset_dir)))
+            all_data = torch.from_numpy(all_data)
 
         print("loaded ", all_data.shape, all_data.dtype, args.dataset_dir)
         self.num_cls = 2

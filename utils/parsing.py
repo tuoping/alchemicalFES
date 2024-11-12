@@ -38,7 +38,7 @@ def parse_train_args():
     parser.add_argument("--clsfree_guidance_dataset_lattice_size", type=int, default=6)
     args = parser.parse_args()
     
-    os.environ["MODEL_DIR"]=f"/nfs/scistore14/chenggrp/ptuo/NeuralRG/alchemicalFES/logs-dir-ising/latt6x6T{args.modeldir_temperature}/kernel3x3_timeembed_symmetrized/{args.modeldir_type}"
+    os.environ["MODEL_DIR"]=f"/nfs/scistore23/chenggrp/ptuo/NeuralRG/alchemicalFES/logs-dir-ising/latt6x6T{args.modeldir_temperature}/kernel3x3_timeembed_symmetrized/{args.modeldir_type}"
     os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt{args.validation_lattice_size}x{args.validation_lattice_size}/epoch{args.ckpt_epoch}_{args.workdir_descriptor}")
 
     import glob

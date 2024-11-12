@@ -171,7 +171,7 @@ if args.cls_guidance_dataset_dir is not None:
 else:
     toy_ds = None
 
-# model = simplexModule(channels, 72, 32, hyperparams=hparams, toy_data=toy_ds).load_from_checkpoint(ckpt, strict=False)
+# model = simplexModule(channels, None, 32, hyperparams=hparams, toy_data=toy_ds)
 
 model = simplexModule.load_from_checkpoint(
     checkpoint_path=ckpt,

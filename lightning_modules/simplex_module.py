@@ -221,9 +221,9 @@ from copy import deepcopy
 from utils.esm import upgrade_state_dict
 
 class simplexModule(GeneralModule):
-    def __init__(self, channels, num_cls, num_e=0, hyperparams=None, toy_data=None):
+    def __init__(self, channels, num_cls=None, num_e=None, hyperparams=None, toy_data=None):
         super().__init__(hyperparams)
-        self.load_model(channels, num_cls, num_e, hyperparams)
+        self.load_model(channels, hyperparams, num_cls, num_e)
         self.condflow = DirichletConditionalFlow(K=self.model.alphabet_size, alpha_spacing=0.001, alpha_max=hyperparams.alpha_max)
         self.hyperparams = hyperparams
         self.RCL_seq = RCLoss(RC)
@@ -232,7 +232,7 @@ class simplexModule(GeneralModule):
         self.loaded_uncond_model = False
         self.toy_data = toy_data
 
-    def load_model(self, channels, num_cls, num_e, hyperparams):
+    def load_model(self, channels, hyperparams, num_cls=None, num_e=None):
         if hyperparams.model == "CNN3D":
             self.model = CNNModel3D(hyperparams, channels, num_cls)
         elif hyperparams.model == "CNN2D":
@@ -262,12 +262,7 @@ class simplexModule(GeneralModule):
         shape = seq.shape
         if self.hyperparams.cls_free_guidance:
             if self.hyperparams.guidance_op == "energy-magnetization":
-                if self.model.num_eemb+1 == 33:
-                    energy_op_inp = torch.where(torch.rand(B, device=self.device) >= self.hyperparams.cls_free_noclass_ratio, energy_op.squeeze(), 32) # set fraction of the classes to the unconditional class
-                elif self.model.num_eemb+1 == 32:
-                    energy_op_inp = energy_op
-                else:
-                    raise Exception("Wrong model.num_eemb value: %d, compared to dataset e values within [%d, %d]"%(self.model.num_eemb+1, energy_op.min(), energy_op.max()))
+                energy_op_inp = energy_op
                 logits = self.model(xt, t, cls=cls, e=energy_op_inp)
                 logits_symm = self.model(1-xt, t, cls=cls.max()-cls, e=energy_op_inp)
             elif self.hyperparams.guidance_op == "magnetization":
@@ -379,7 +374,7 @@ class simplexModule(GeneralModule):
             # print(logits.grad)
             mse_rcloss = torch.abs(rc_logits-rc_seq)
             self.lg("MSERCLoss", mse_rcloss)
-            losses += rc_loss.mean()*self.hyperparams.prefactor_RC + mse_rcloss.mean()*self.hyperparams.prefactor_RC_mse
+            losses += rc_loss.mean()*self.hyperparams.prefactor_RC
         if self.stage == "train":
             current_lr = self.optimizers().param_groups[0]['lr']
             self.lg("LR", torch.tensor([current_lr]))
