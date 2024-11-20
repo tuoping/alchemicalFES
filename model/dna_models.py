@@ -164,33 +164,38 @@ class CNNModel(nn.Module):
         #     feat = self.bn2(feat)
         return feat
     
-from memory_profiler import profile
 
 class CNNModel3D(nn.Module):
-    def __init__(self, args, alphabet_size, num_cls, classifier=False):
+    def __init__(self, args, alphabet_size, num_cls=None, num_eemb=None, classifier=False):
         super(CNNModel3D, self).__init__()
         self.alphabet_size = alphabet_size
         self.args = args
         self.classifier = classifier
         self.num_cls = num_cls
-
+        self.num_eemb = num_eemb
+        
         inp_size = self.alphabet_size
 
-        self.linear = nn.Conv3d(inp_size, args.hidden_dim, kernel_size=9)
+        self.linear = nn.Conv3d(inp_size, args.hidden_dim, kernel_size=args.kernel_size)
         self.time_embedder = nn.Sequential(GaussianFourierProjection(embed_dim= args.hidden_dim),nn.Linear(args.hidden_dim, args.hidden_dim))
 
         self.num_layers = 4 * args.num_cnn_stacks
-        self.convs = nn.ModuleList([layer for layer in [nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=9, padding=4),
-                      nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=9, padding=4),
-                      nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=9, dilation=2, padding=8),
-                      nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=9, dilation=4, padding=16)] for i in range(args.num_cnn_stacks)])
-                      # nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=9, dilation=16, padding=64),
-                      # nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=9, dilation=64, padding=256)]
+        self.convs = nn.ModuleList([layer for layer in [nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=args.kernel_size, padding=args.padding),
+                      nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=args.kernel_size, padding=args.padding),
+                      nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=args.kernel_size, padding=args.padding),
+                      nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=args.kernel_size, padding=args.padding)
+                      ] for i in range(args.num_cnn_stacks)])
+
+                      # nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=args.kernel_size, dilation=2, padding=8),
+                      # nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=args.kernel_size, dilation=4, padding=16)
+
         self.time_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
         self.norms = nn.ModuleList([nn.LayerNorm(args.hidden_dim) for _ in range(self.num_layers)])
+        # self.pool = nn.AdaptiveAvgPool3d((None,None))
         self.final_conv = nn.Sequential(nn.Conv3d(args.hidden_dim, args.hidden_dim, kernel_size=1),
                                    nn.ReLU(),
                                    nn.Conv3d(args.hidden_dim, args.hidden_dim if classifier else self.alphabet_size, kernel_size=1))
+        
         self.dropout = nn.Dropout(args.dropout)
         if classifier:
             self.cls_head = nn.Sequential(nn.Linear(args.hidden_dim, args.hidden_dim),
@@ -198,32 +203,56 @@ class CNNModel3D(nn.Module):
                                    nn.Linear(args.hidden_dim, self.num_cls))
 
         if self.args.cls_free_guidance and not self.classifier:
-            self.cls_embedder = nn.Embedding(num_embeddings=self.num_cls + 1, embedding_dim=args.hidden_dim)
-            self.cls_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
+            print("Using class free guidance")
+            if self.num_cls is None and self.num_eemb is None:
+                raise Exception("Condition not provided for classfier free guidance")
+            if self.num_cls is not None:
+                print("Using magnetization as condition")
+                self.cls_embedder = nn.Embedding(num_embeddings=self.num_cls + 1, embedding_dim=args.hidden_dim)
+                self.cls_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
+            if self.num_eemb is not None:
+                print("Using energy as condition")
+                self.e_embedder = nn.Embedding(num_embeddings=self.num_eemb + 1, embedding_dim=args.hidden_dim)
+                self.e_layers = nn.ModuleList([Dense(args.hidden_dim, args.hidden_dim) for _ in range(self.num_layers)])
     
     # @profile
-    def forward(self, seq, t, cls = None, return_embedding=False):
+    def forward(self, seq, t, cls = None, e=None, return_embedding=False):
         if self.args.clean_data:
             # feat = feat.permute(0, 2, 1)
             feat = seq.permute(0,4,1,2,3)
-            feat = F.pad(feat, (4, 4, 4, 4, 4, 4), mode='circular')
+            feat = F.pad(feat, (self.args.padding, self.args.padding, self.args.padding, self.args.padding, self.args.padding, self.args.padding), mode='circular')
             feat = self.linear(feat)
         else:
             time_emb = F.relu(self.time_embedder(t))
             # feat = seq.permute(0, 2, 1)
             feat = seq.permute(0,4,1,2,3)
-            feat = F.pad(feat, (4, 4, 4, 4, 4, 4), mode='circular')
+            feat = F.pad(feat, (self.args.padding, self.args.padding, self.args.padding, self.args.padding, self.args.padding, self.args.padding), mode='circular')
             feat = F.relu(self.linear(feat))
 
         if self.args.cls_free_guidance and not self.classifier:
-            cls_emb = self.cls_embedder(cls)
+            if self.num_cls is None:
+                cls_emb = torch.zeros([seq.shape[0], self.args.hidden_dim]).to(seq.device)
+            else:
+                cls_emb = torch.zeros([seq.shape[0], self.args.hidden_dim]).to(seq.device)
+                if (cls > self.num_cls).any():
+                    print("cls.max(), cls.min() = ", cls.max(), cls.min())
+                    raise Exception("cls value out of range")
+                cls_emb[torch.where(cls<=self.num_cls)] = self.cls_embedder(cls[torch.where(cls<=self.num_cls)])
+            if self.num_eemb is None:
+                e_emb = torch.zeros([seq.shape[0], self.args.hidden_dim]).to(seq.device)
+            else:
+                e_emb = self.e_embedder(e)
+
 
         for i in range(self.num_layers):
             h = self.dropout(feat)
             if not self.args.clean_data:
                 h = h + self.time_layers[i](time_emb)[:, :, None, None, None]
             if self.args.cls_free_guidance and not self.classifier:
-                h = h + self.cls_layers[i](cls_emb)[:, :, None, None, None]
+                if self.num_cls is not None:
+                    h = h + (self.cls_layers[i](cls_emb))[:, :, None, None] 
+                if self.num_eemb is not None:
+                    h = h + (self.e_layers[i](e_emb))[:, :, None, None]
             h = self.norms[i]((h).permute(0,2,3,4,1))
             h = F.relu(self.convs[i](h.permute(0,4,1,2,3)))
             if h.shape == feat.shape:
@@ -241,6 +270,7 @@ class CNNModel3D(nn.Module):
             else:
                 return self.cls_head(feat)
         return feat
+
 
 class CNNModel2D(nn.Module):
     def __init__(self, args, alphabet_size, num_cls=None, num_eemb=None, classifier=False):
