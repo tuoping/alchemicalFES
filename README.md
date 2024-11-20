@@ -25,4 +25,5 @@ python -u val_simplex_ising.py --dump_freq 4 --ckpt_epoch 162 --modeldir_type cl
 ```
 ## Acknowledgements
 Code development based on
+
 [Dirichlet Flow Matching with Applications to DNA Sequence Design](https://github.com/HannesStark/dirichlet-flow-matching)
