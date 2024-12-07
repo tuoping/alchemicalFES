@@ -22,7 +22,9 @@ def sample_cond_prob_path(hyperparams, seq, channels):
     shape = seq.shape
     batchsize = seq.shape[0]
     seq_onehot = torch.nn.functional.one_hot(seq.reshape(-1), num_classes=channels).reshape(*shape, channels)
-    t = torch.from_numpy(scipy.stats.expon().rvs(size=batchsize)*hyperparams.time_scale).to(seq.device).float()
+    # t = torch.from_numpy(scipy.stats.expon().rvs(size=batchsize)*hyperparams.time_scale).to(seq.device).float()
+    exponential_dist = torch.distributions.Exponential(1.0)
+    t = exponential_dist.sample((batchsize,)).to(seq.device).float()*hyperparams.time_scale
     alphas = torch.ones(*shape, channels, device=seq.device)
     alphas = alphas + t[:, None, None, None, None]*seq_onehot
     xt = torch.distributions.Dirichlet(alphas).sample()

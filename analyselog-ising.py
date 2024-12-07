@@ -44,7 +44,7 @@ def readlog(dir, trainlosskeyword="train_loss"):
 
     return alltrainlosses_baseline, alltrainsteps_baseline, allvallosses_baseline, allvalsteps_baseline
 
-def plot_3losses(dir_dir_b1024, k2 = "train_RCLoss", k3 = "train_energyloss", after_epoch=None, before_epoch=80):
+def plot_3losses(dir_dir_b1024, k2 = "train_RCLoss", k3 = "train_energyloss", after_epoch=None, before_epoch=None):
     after_idx = 0
     plt.rcParams["figure.figsize"] = (17,5)
     fig = plt.figure()

@@ -195,3 +195,123 @@ class IsingDataset_mixT(torch.utils.data.Dataset):
         ridxT = torch.randperm(len(self.T))[0]
         return self.seqs_T[ridxT][idx], self.magn_cls_T[ridxT][idx], self.energy_T[ridxT][idx], self.energy_op_T[ridxT][idx], self.T[ridxT]
     
+
+
+def RC_numCu(logits, device="cuda"):
+    assert logits.shape[-1] == 2
+    B,H,W,D,K = logits.shape
+    RC = torch.sum(logits*torch.tensor([0,1]).to(device=device)[None,None,None,:], dim=-1)
+    RC = torch.sum(RC.reshape(B, -1), dim=-1)
+    RC = H*W-RC
+    return RC.reshape(-1,1)
+
+class AlCuDataset(torch.utils.data.Dataset):
+    def __init__(self, args, device="cuda"):
+        super().__init__()
+
+        all_data_energy = np.load("%s/buffer_energy.npy"%(args.dataset_dir))
+        all_data = np.load("%s/buffer_atypes.npy"%(args.dataset_dir))
+        all_data_ids = np.arange(len(all_data_energy))
+        # shuffling
+        np.random.shuffle(all_data_ids)
+        all_data = all_data[all_data_ids]
+        all_data_energy = all_data_energy[all_data_ids]
+
+        if args.subset_size is not None:
+            all_data = torch.from_numpy(all_data[:args.subset_size])
+            all_data_energy = torch.from_numpy(all_data_energy[:args.subset_size])
+        else:
+            all_data = torch.from_numpy(all_data)
+            all_data_energy = torch.from_numpy(all_data_energy)
+
+        print("loaded ", all_data.shape, all_data.dtype, args.dataset_dir)
+        self.num_cls = 2
+        self.seq_len = args.toy_seq_len
+        self.alphabet_size = args.toy_simplex_dim
+
+        self.seqs = all_data.reshape(-1,*args.toy_seq_dim).to(device=device, dtype=torch.int64)
+        self.energy = all_data_energy
+        assert not torch.isinf(torch.exp((-self.energy+self.energy.min())/0.02585198444922)).any(), "max(reduced energy)=%f"(((-self.energy+self.energy.min())/0.02585198444922).max())
+
+        self.energy_op = torch.ones_like(self.energy).to(torch.int64)
+
+        
+        self.magn_cls = RC_numCu(torch.nn.functional.one_hot(self.seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1,*args.toy_seq_dim, self.alphabet_size), device=device).to(device=device).reshape(-1)
+        self.magn_cls = (self.magn_cls // args.scale_magn).to(torch.int64)
+
+
+    def read_target_class(self, dataset_file, seq_L, scale_magn, subset_size):
+        raise Exception("Need debugging")
+        print("WARNNING: using target dataset", dataset_file)
+        all_data = np.load(dataset_file)
+        np.random.shuffle(all_data)
+        all_data = torch.from_numpy(all_data[:subset_size])
+        toy_seq_dim = (seq_L, seq_L)
+        assert seq_L == all_data.shape[1] or (seq_L**2 == all_data.shape[1] and len(all_data.shape) == 2)
+
+        target_seqs = all_data.reshape(-1,*toy_seq_dim).to(device=self.seqs.device, dtype=torch.int64)
+        target_seqs[torch.where(target_seqs == -1)] = 0
+
+        self.magn_cls = RC(torch.nn.functional.one_hot(target_seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1,*toy_seq_dim, self.alphabet_size), device=self.seqs.device).to(device=self.seqs.device).reshape(-1)
+        self.magn_cls = (self.magn_cls // scale_magn).to(torch.int64)
+
+        if seq_L != 6:
+            print("WARNING:: Lattice size of the target class = %d, check if this is what you want."%seq_L)
+        self.energy = ising_boltzman_prob(target_seqs)
+        assert not torch.isinf(torch.exp((-self.energy+self.energy.min())/3.2)).any(), "max(reduced energy)=%f"(((-self.energy+self.energy.min())/3.2).max())
+        print("Target energy between ", self.energy.min(), self.energy.max())
+        self.energy = self.energy//scale_magn
+        print("Scaled target energy between ", self.energy.min(), self.energy.max())
+        print("Scaling factor = ", scale_magn)
+        # assert (self.energy % 4 == 0).all()
+        assert self.energy.max() <= 52
+        self.energy_op = ((self.energy+72)//4).to(torch.int64)
+            
+
+
+    def make_custom_target_class(self):
+        raise Exception("Need debugging")
+        print("WARNNING: using custom FM target dataset")
+        B,H,W = self.seqs.shape
+        ### Data ensemble for analytical conditional probability
+        ### Toy setting 1: noisy
+        # self.data_class1 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True)) for _ in range(num_seq)]).to(device)
+        # self.data_class2 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True)) for _ in range(num_seq)]).to(device)
+
+        ### Toy setting 3: all spin down/noisy
+        # probabilities = [0.9, 0.1]
+        # self.data_class1 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True, p=probabilities)) for _ in range(num_seq)]).to(device)
+        self.seqs = torch.zeros_like(self.seqs).to(self.seqs.device).to(torch.int64)
+        indices = [torch.randperm(H*W)[:int(H*W/2)] for i in range(self.seqs.shape[0])]
+        for i in range(len(indices)):
+            self.seqs[i].reshape(-1)[indices[i]] = 1
+        print(self.seqs.shape)
+        self.magn_cls = RC(torch.nn.functional.one_hot(self.seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1, H, W, self.alphabet_size), device=self.seqs.device).to(device=self.seqs.device).reshape(-1)
+        print(self.magn_cls)
+        self.magn_cls = (self.magn_cls//(H/6)**2).to(torch.int64)
+        print(self.magn_cls)
+        assert (self.magn_cls == 36).all(), "magn \in [%d %d]"%(self.magn_cls.min(), self.magn_cls.max())
+        self.energy = ising_boltzman_prob(self.seqs)
+        # self.energy_op = ((self.energy+72)//4).to(torch.int64)
+        self.energy_op = (torch.zeros_like(self.energy)).to(torch.int64)
+
+        '''
+        ### Custom magn_guidance
+        magn_cls_1 = torch.stack([torch.from_numpy(np.zeros(36*2)).to(torch.int64) for _ in range(num_seq//2)]).to(self.seqs.device).sum(-1)
+        magn_cls_2 = torch.stack([torch.from_numpy(np.ones(36*2)).to(torch.int64) for _ in range(num_seq - num_seq//2)]).to(self.seqs.device).sum(-1)
+        self.magn_cls = torch.cat([magn_cls_1, magn_cls_2], dim=0)
+        self.magn_cls = self.magn_cls[torch.randperm(len(self.magn_cls))]
+
+        ### Custom energy_guidance
+        self.energy = -72.*torch.ones(num_seq)
+        self.energy_op = torch.zeros(num_seq).to(torch.int64)
+        '''
+        pass
+
+    def __len__(self):
+        return len(self.seqs)
+
+    def __getitem__(self, idx):
+        return self.seqs[idx], self.magn_cls[idx], self.energy[idx], self.energy_op[idx]
+    
+        
