@@ -80,6 +80,7 @@ class dataset_params():
         self.dataset_dir = dataset_dir
         self.cls_ckpt = None
         self.scale_magn = scale_magn
+        self.stage = stage
         if stage == "val":
             self.subset_size = batch_size
         else:
@@ -89,7 +90,7 @@ dparams = dataset_params(seq_len, seq_dim, channels, args.dataset_dir, scale_mag
 
 from utils.dataset import IsingDataset
 
-dparams.dataset_dir = os.path.join(args.dataset_dir, "val")
+dparams.dataset_dir = os.path.join(args.dataset_dir, "val/buffer.npy")
 
 train_ds = IsingDataset(dparams)
 val_ds = IsingDataset(dparams)
@@ -108,23 +109,25 @@ class Hyperparams():
         self.padding = 1
         self.dropout = dropout
 
+        self.guided = args.guided
         self.cls_free_guidance = args.clsfree_guidance
         self.probability_tilt = args.probability_tilt
         self.probability_tilt_scheduled = args.probability_tilt_scheduled
         self.guidance_op = "energy-magnetization"
         self.uncond_model_ckpt = args.uncond_model_ckpt
+        self.additional_cond = args.additional_cond
 
         self.clean_data = clean_data
         self.num_cnn_stacks = num_cnn_stacks
         self.lr = lr
         self.wandb = False
-        self.seq_dim = (args.validation_lattice_size,args.validation_lattice_size)
+        self.seq_dim = torch.tensor([args.validation_lattice_size,args.validation_lattice_size])
         self.channels = channels
         self.model = model
         self.mode = mode
         self.gamma_focal = 2.
         self.prefactor_CE = 1.
-        if mode is not None and "RC" in mode:
+        if mode is not None and ("RC" in mode or "RC-focal" in mode):
             self.prefactor_RC = 1.
             self.prefactor_CE = 0.01
         if mode is not None and "Energy" in mode:
@@ -148,6 +151,7 @@ class Hyperparams():
         self.prior_pseudocount = 0.
         self.score_free_guidance = False
         self.guidance_scale = args.guidance_scale
+        self.guidance_scale_2 = args.guidance_scale_2
         self.shuffle_cls_freq = args.shuffle_cls_freq
         
         self.cls_guidance = args.cls_guidance
@@ -157,7 +161,7 @@ class Hyperparams():
 
         self.dump_freq = args.dump_freq
 
-loss_mode = ["Energy"]
+loss_mode = ["Energy", "RC-focal"]
 print(">>> Using extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)

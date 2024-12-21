@@ -7,8 +7,7 @@
 #SBATCH --mem-per-gpu=80000
 #SBATCH --time=96:00:00
 #SBATCH --constraint=bookworm
-#SBATCH --nodelist=gpu266
-#SBATCH --exclude=gpu113,gpu118,gpu119,gpu123,gpu124,gpu125,gpu127,gpu137,gpu138,gpu139,gpu145,gpu144,gpu148,gpu150
+#SBATCH --exclude=gpu113,gpu118,gpu119,gpu123,gpu124,gpu125,gpu127,gpu137,gpu138,gpu139,gpu145,gpu144,gpu148,gpu150,gpu273
 
 # module purge
 # module load openmpi

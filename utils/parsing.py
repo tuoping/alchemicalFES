@@ -16,17 +16,20 @@ def parse_train_args():
     parser.add_argument("--ckpt_epoch", type=int, default=None)
     parser.add_argument("--workdir_descriptor", type=str, default="")
     parser.add_argument("--modeldir_temperature", type=str, default="3.2")
-    parser.add_argument("--modeldir_type", type=str, default="clsfreeG")
+    parser.add_argument("--modeldir_type", type=str, default="")
     parser.add_argument("--validation_lattice_size", type=int, default=6)
     parser.add_argument("--validation_temperature", type=float)
 
     parser.add_argument("--uncond_model_ckpt", type=None)
+    parser.add_argument("--additional_cond", type=None, default=None)
 
     parser.add_argument("--alpha_max", type=int, default=10)
     parser.add_argument("--num_integration_steps", type=int, default=80)
     parser.add_argument("--shuffle_cls_freq", type=float, default=0.0)
     parser.add_argument("--guidance_scale", type=float, default=1.0)
+    parser.add_argument("--guidance_scale_2", type=float, default=0.0)
 
+    parser.add_argument("--guided", action="store_true")
     parser.add_argument("--cls_guidance", action="store_true")
     parser.add_argument("--cls_guidance_dataset_dir", type=str, default=None)
 
@@ -38,11 +41,18 @@ def parse_train_args():
     parser.add_argument("--clsfree_guidance_dataset_lattice_size", type=int, default=6)
     args = parser.parse_args()
     
-    os.environ["MODEL_DIR"]=f"/nfs/scistore23/chenggrp/ptuo/NeuralRG/alchemicalFES/logs-dir-ising/latt6x6T{args.modeldir_temperature}/kernel3x3_timeembed_symmetrized/{args.modeldir_type}"
+    if args.clsfree_guidance or args.cls_guidance:
+        args.guided = True
+    os.environ["MODEL_DIR"]=f"/nfs/scistore23/chenggrp/ptuo/NeuralRG/alchemicalFES/logs-dir-ising/latt6x6T{args.modeldir_temperature}/{args.modeldir_type}"
+    print("Model dir:: ")
+    print(os.environ["MODEL_DIR"])
     os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt{args.validation_lattice_size}x{args.validation_lattice_size}/epoch{args.ckpt_epoch}_{args.workdir_descriptor}")
+    print("Work dir:: ")
+    print(os.environ["work_dir"])
 
     import glob
     if args.ckpt_epoch is not None:
+        print(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={args.ckpt_epoch}-train_loss=*"))
         args.ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={args.ckpt_epoch}-train_loss=*"))[0]
     else:
         args.ckpt = None

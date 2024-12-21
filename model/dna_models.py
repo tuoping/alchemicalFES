@@ -345,7 +345,12 @@ class CNNModel2D(nn.Module):
                 return self.cls_head[1:](embedding), embedding
             else:
                 return self.cls_head(feat)
-        return feat
+        if return_embedding and self.args.cls_free_guidance:
+            return feat, cls_emb, e_emb
+        elif return_embedding:
+            return feat, None, None
+        else:
+            return feat
 
 class TransformerModel(nn.Module):
     def __init__(self, args, alphabet_size, num_cls, classifier=False):

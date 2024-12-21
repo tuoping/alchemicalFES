@@ -47,10 +47,10 @@ class IsingDataset(torch.utils.data.Dataset):
         super().__init__()
 
         if isinstance( args.dataset_dir, list):
-            all_data = [np.load("%s/buffer.npy"%(d)) for d in args.dataset_dir]
+            all_data = [np.load("%s"%(d)) for d in args.dataset_dir]
             all_data = np.concatenate(all_data)
         else:
-            all_data = np.load("%s/buffer.npy"%(args.dataset_dir))
+            all_data = np.load("%s"%(args.dataset_dir))
         np.random.shuffle(all_data)
         if args.subset_size is not None:
             all_data = torch.from_numpy(all_data[:args.subset_size])
@@ -107,42 +107,11 @@ class IsingDataset(torch.utils.data.Dataset):
 
 
     def make_custom_target_class(self):
-        print("WARNNING: using custom FM target dataset")
+        print("WARNNING: using custom target dataset")
         B,H,W = self.seqs.shape
-        ### Data ensemble for analytical conditional probability
-        ### Toy setting 1: noisy
-        # self.data_class1 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True)) for _ in range(num_seq)]).to(device)
-        # self.data_class2 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True)) for _ in range(num_seq)]).to(device)
+        self.magn_cls = torch.zeros(B).to(torch.int64).to(device=self.seqs.device)
+        self.energy_op = (torch.ones_like(self.energy)*31).to(torch.int64).to(device=self.seqs.device)
 
-        ### Toy setting 3: all spin down/noisy
-        # probabilities = [0.9, 0.1]
-        # self.data_class1 = torch.stack([torch.from_numpy(np.random.choice(np.arange(self.alphabet_size), size=args.toy_seq_len, replace=True, p=probabilities)) for _ in range(num_seq)]).to(device)
-        self.seqs = torch.zeros_like(self.seqs).to(self.seqs.device).to(torch.int64)
-        indices = [torch.randperm(H*W)[:int(H*W/2)] for i in range(self.seqs.shape[0])]
-        for i in range(len(indices)):
-            self.seqs[i].reshape(-1)[indices[i]] = 1
-        print(self.seqs.shape)
-        self.magn_cls = RC(torch.nn.functional.one_hot(self.seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1, H, W, self.alphabet_size), device=self.seqs.device).to(device=self.seqs.device).reshape(-1)
-        print(self.magn_cls)
-        self.magn_cls = (self.magn_cls//(H/6)**2).to(torch.int64)
-        print(self.magn_cls)
-        assert (self.magn_cls == 36).all(), "magn \in [%d %d]"%(self.magn_cls.min(), self.magn_cls.max())
-        self.energy = ising_boltzman_prob(self.seqs)
-        # self.energy_op = ((self.energy+72)//4).to(torch.int64)
-        self.energy_op = (torch.zeros_like(self.energy)).to(torch.int64)
-
-        '''
-        ### Custom magn_guidance
-        magn_cls_1 = torch.stack([torch.from_numpy(np.zeros(36*2)).to(torch.int64) for _ in range(num_seq//2)]).to(self.seqs.device).sum(-1)
-        magn_cls_2 = torch.stack([torch.from_numpy(np.ones(36*2)).to(torch.int64) for _ in range(num_seq - num_seq//2)]).to(self.seqs.device).sum(-1)
-        self.magn_cls = torch.cat([magn_cls_1, magn_cls_2], dim=0)
-        self.magn_cls = self.magn_cls[torch.randperm(len(self.magn_cls))]
-
-        ### Custom energy_guidance
-        self.energy = -72.*torch.ones(num_seq)
-        self.energy_op = torch.zeros(num_seq).to(torch.int64)
-        '''
-        pass
 
     def __len__(self):
         return len(self.seqs)
