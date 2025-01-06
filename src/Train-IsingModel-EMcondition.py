@@ -19,10 +19,10 @@ seq_len= 6*6
 seq_dim = (6,6)
 
 ckpt = None
-ckpt_epoch = 500
-import glob
-print(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))
-ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))[0]
+# ckpt_epoch = 500
+# import glob
+# print(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))
+# ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
