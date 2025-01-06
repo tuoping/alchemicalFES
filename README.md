@@ -1,5 +1,4 @@
 # Alchemical FES
-Modified from https://github.com/HannesStark/dirichlet-flow-matching
 
 ## Installation
 Conda environment
