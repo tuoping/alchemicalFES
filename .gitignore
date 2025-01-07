@@ -52,4 +52,4 @@ trainlatt6x6_simplex_batch1024_*
 *.npy
 analysevar.ipynb
 slurm.sh
-trainAlCu_*
+trainAlCu*
