@@ -19,7 +19,9 @@ def setfigform_simple(xlabel, ylabel=None, xlimit = (None,None), ylimit = (None,
     # plt.yticks(fontsize = font['size'], fontname = "serif")
     plt.tick_params(direction="in")
 
-def readlog(dir, trainlosskeyword="train_loss"):
+exclude_epochs = np.loadtxt("EXCLUDE_EPOCHS")
+
+def readlog(dir, trainlosskeyword="train_loss", exclude_epochs=exclude_epochs):
     alltrainsteps_baseline = []
     alltrainlosses_baseline = []
     allvalsteps_baseline = []
@@ -37,11 +39,16 @@ def readlog(dir, trainlosskeyword="train_loss"):
                 continue
             if trainlosskeyword in line:
                 for idx_t,t in enumerate(l):
+                    if "\'epoch\'" in t:
+                        if float(l[idx_t+1].replace(",","")) in exclude_epochs:
+                            print(float(l[idx_t+1].replace(",","")), exclude_epochs)
+                            if len(alltrainlosses_baseline)>len(alltrainsteps_baseline):
+                                alltrainlosses_baseline.pop(-1)
+                            break
+                        alltrainsteps_baseline.append(float(l[idx_t+1].replace(",","")))
+                        break
                     if trainlosskeyword in t:
                         alltrainlosses_baseline.append(float(l[idx_t+1].replace(",","")))
-                    if "\'epoch\'" in t:
-                        alltrainsteps_baseline.append(float(l[idx_t+1].replace(",","")))
-
     return alltrainlosses_baseline, alltrainsteps_baseline, allvallosses_baseline, allvalsteps_baseline
 
 def plot_3losses(dir_dir_b1024, k2 = "train_RCLoss", k3 = "train_eneergy_mseloss", after_epoch=None, before_epoch=None):

@@ -79,6 +79,7 @@ class Hyperparams():
         self.kernel_size = 3
         self.padding = 1
 
+        self.guided = True
         self.cls_free_guidance = True
         self.guidance_op = "energy-magnetization"
         self.uncond_model_ckpt = None
@@ -120,7 +121,7 @@ hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), m
 hparams.simplex_params()
 
 from lightning_modules.simplex_module import simplexModule
-model = simplexModule(channels, num_e=32, hyperparams=hparams)
+model = simplexModule(channels, num_cls=73, num_e=32, hyperparams=hparams)
 
 
 
