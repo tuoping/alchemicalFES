@@ -129,8 +129,8 @@ class IsingDataset_mixT(torch.utils.data.Dataset):
         self.energy_T = []
         self.energy_op_T = []
         self.magn_cls_T = []
-        self.T = [3.2, 2.8, 2.4, 2.2, 2.0]
-        for T in [3.2, 2.8, 2.4, 2.2, 2.0]:
+        self.T = [3.2, 2.2]
+        for T in self.T:
             all_data = torch.from_numpy(np.load("data/ising-latt6x6-T4.0/latt6x6/buffer-S%.2f.npy"%T))
 
 
