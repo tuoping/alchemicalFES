@@ -7,10 +7,10 @@ import os,sys
 # os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 
-os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T3.2/kernel3x3_timeembed_symmetrized/clsfreeG/ElossMloss/guidanceEM/prefrc10"
+os.environ["MODEL_DIR"]=f"logs-dir-ising/latt6x6T3.2/kernel3x3_timeembed_symmetrized/clsfreeG/Mloss/guidanceE"
 os.environ["work_dir"]=os.environ["MODEL_DIR"]
 
-dataset_dir = ["data/ising-latt6x6-T2.2/buffer.npy"]
+dataset_dir = ["data/ising-latt6x6-T3.2/buffer.npy"]
 
 stage = "train"
 
@@ -19,10 +19,10 @@ seq_len= 6*6
 seq_dim = (6,6)
 
 ckpt = None
-ckpt_epoch = 249
-import glob
-print(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))
-ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))[0]
+# ckpt_epoch = 500
+# import glob
+# print(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))
+# ckpt = glob.glob(os.path.join(os.environ["MODEL_DIR"], f"model-epoch={ckpt_epoch}-train_loss=*"))[0]
 if stage == "train":
     batch_size = 1024
     if ckpt is not None: 
@@ -36,7 +36,7 @@ else:
     raise Exception("Unrecognized stage")
 num_workers = 0
 max_steps = 40000000
-max_epochs = 400
+max_epochs = 1000
 limit_train_batches = None
 if stage == "train":
     limit_val_batches = 0.0
@@ -60,9 +60,9 @@ class dataset_params():
         
 dparams = dataset_params(seq_len, seq_dim, channels, dataset_dir)
 
-from utils.dataset import IsingDataset_mixT
+from utils.dataset import IsingDataset
 dparams.dataset_dir = dataset_dir
-train_ds = IsingDataset_mixT(dparams)
+train_ds = IsingDataset(dparams)
 if isinstance(dataset_dir, list):
     dparams.dataset_dir = os.path.join(dataset_dir[0], "val")
 else:
@@ -79,7 +79,6 @@ class Hyperparams():
         self.kernel_size = 3
         self.padding = 1
 
-        self.guided = True
         self.cls_free_guidance = True
         self.guidance_op = "energy-magnetization"
         self.uncond_model_ckpt = None
@@ -98,8 +97,8 @@ class Hyperparams():
         self.gamma_focal = 2.
         self.prefactor_CE = 1.
         if mode is not None and ("RC" in mode or "RC-focal" in mode):
-            self.prefactor_RC = 5
-            self.prefactor_CE = 1
+            self.prefactor_RC = 100.
+            self.prefactor_CE = 1.00
         if mode is not None and "Energy" in mode:
             self.prefactor_EKL = 1.
             self.EKLloss_temperature = 500
@@ -114,14 +113,14 @@ class Hyperparams():
         self.flow_temp = 1.
         self.allow_nan_cfactor = True
 
-loss_mode = ["RC", "Energy"]
+loss_mode = ["RC-focal"]
 print("extra loss::", loss_mode)
 
 hparams = Hyperparams(clean_data=False, num_cnn_stacks=3, hidden_dim=int(128), model="CNN2D", mode=loss_mode)
 hparams.simplex_params()
 
 from lightning_modules.simplex_module import simplexModule
-model = simplexModule(channels, num_cls=72, num_e=32, hyperparams=hparams)
+model = simplexModule(channels, num_e=32, hyperparams=hparams)
 
 
 

@@ -13,7 +13,7 @@ def parse_train_args():
     parser.add_argument("--dump_freq", type=int, default=1)
 
     # Run settings
-    parser.add_argument("--ckpt_epoch", type=int, default=None)
+    parser.add_argument("--ckpt_epoch", type=str, default=None)
     parser.add_argument("--workdir_descriptor", type=str, default="")
     parser.add_argument("--modeldir_temperature", type=str, default="3.2")
     parser.add_argument("--modeldir_type", type=str, default="")
