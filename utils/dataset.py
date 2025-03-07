@@ -107,10 +107,25 @@ class IsingDataset(torch.utils.data.Dataset):
 
 
     def make_custom_target_class(self):
-        print("WARNNING: using custom target dataset")
+        print("WARNNING: using custom target dataset: 6x6 Ising model with all ones or all minus ones")
         B,H,W = self.seqs.shape
-        self.magn_cls = torch.zeros(B).to(torch.int64).to(device=self.seqs.device)
-        self.energy_op = (torch.ones_like(self.energy)*31).to(torch.int64).to(device=self.seqs.device)
+        assert H == 6
+        assert W == 6
+    
+        # Randomly decide which batches get +1 vs. -1
+        # Here, sign_mask will be in {0, 1} shape [B].
+        sign_mask = torch.randint(0, 2, (B,), device=self.seqs.device)
+    
+        # Convert sign_mask {0,1} → {+1, -1} in float
+        # shape will be [B,1,1]; broadcast to [B,H,W]
+        target_seqs = 2.0 * sign_mask.view(-1, 1, 1).float() - 1.0
+        
+        self.magn_cls = RC(torch.nn.functional.one_hot(target_seqs.reshape(-1), num_classes=self.alphabet_size).reshape(-1,*toy_seq_dim, self.alphabet_size), device=self.seqs.device).to(device=self.seqs.device).reshape(-1)
+        self.energy = ising_boltzman_prob(target_seqs)
+        assert not torch.isinf(torch.exp((-self.energy+self.energy.min())/3.2)).any(), "max(reduced energy)=%f"(((-self.energy+self.energy.min())/3.2).max())
+        assert (self.energy % 4 == 0).all()
+        assert self.energy.max() <= 52
+        self.energy_op = ((self.energy+72)//4).to(torch.int64)
 
 
     def __len__(self):
