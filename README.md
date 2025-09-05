@@ -8,14 +8,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install torch_geometric jupyterlab gpustat pyyaml wandb biopython spyrmsd einops biopandas plotly seaborn prody tqdm lightning imageio tmtools "fair-esm[esmfold]" e3nn
 pip install torch_scatter torch_sparse torch_cluster -f https://data.pyg.org/whl/torch-2.1.0+cu113.htm
 
-# The libraries below are required for the promoter design experiments
-git clone https://github.com/kathyxchen/selene.git
-cd selene
-git checkout custom_target_support
-python setup.py build_ext --inplace
-python setup.py install
-
-pip install pyBigWig pytabix cooler pyranges biopython cooltools
 ```
 ## Ising model
 ### Train
