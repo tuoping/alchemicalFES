@@ -8,14 +8,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install torch_geometric jupyterlab gpustat pyyaml wandb biopython spyrmsd einops biopandas plotly seaborn prody tqdm lightning imageio tmtools "fair-esm[esmfold]" e3nn
 pip install torch_scatter torch_sparse torch_cluster -f https://data.pyg.org/whl/torch-2.1.0+cu113.htm
 
-# The libraries below are required for the promoter design experiments
-git clone https://github.com/kathyxchen/selene.git
-cd selene
-git checkout custom_target_support
-python setup.py build_ext --inplace
-python setup.py install
-
-pip install pyBigWig pytabix cooler pyranges biopython cooltools
 ```
 ## Ising model
 ### Train
@@ -27,7 +19,7 @@ python -u src/Train-IsingModel-EMcondition.py
 ### Validate
 This is the validation command for conditional model, conditioning on data of the 6x6 Ising model at $k_BT=2.0$.
 ```bash
-python -u val_simplex_ising.py --dump_freq 4 --ckpt_epoch 162 --modeldir_type clsfreeG/Eloss/guidanceM/test2-mixTdata --workdir_descriptor T2.0_Int80Amax10 --uncond_model_ckpt logs-dir-ising/latt6x6T3.2/kernel3x3_timeembed_symmetrized/eloss_uncond/addmseloss/model-epoch=109-train_loss=3.79.ckpt --clsfree_guidance --probability_tilt --clsfree_guidance_dataset --validation_temperature 2.0
+python -u val_simplex_ising.py --ckpt_epoch 209 --workdir_descriptor $workdir_descriptor --modeldir_temperature 3.2 --validation_lattice_size 24 --modeldir_type kernel3x3_timeembed_symmetrized/clsfreeG/ElossMloss/guidanceEM --validation_temperature 4.0 --shuffle_cls_freq 0.0 --guidance_scale $1 --uncond_model_ckpt $uncond_model_ckpt --clsfree_guidance  --num_integration_steps 640 --dump_freq 8 --probability_tilt 
 ```
 ## Acknowledgements
 Code development based on
