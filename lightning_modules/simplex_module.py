@@ -454,7 +454,7 @@ class simplexModule(GeneralModule):
             hyperparams_uncond.cls_free_guidance = False
             self.uncond_model = CNNModel2D(hyperparams_uncond, self.hyperparams.channels, 2, 2)
             self.uncond_model.load_state_dict(upgrade_state_dict(
-                torch.load(self.hyperparams.uncond_model_ckpt, map_location=self.device)['state_dict'],
+                torch.load(self.hyperparams.uncond_model_ckpt, map_location=self.device, weights_only=False)['state_dict'],
                 prefixes=['model.']))
             self.uncond_model.eval()
             self.uncond_model.to(torch.float32).to(self.device)

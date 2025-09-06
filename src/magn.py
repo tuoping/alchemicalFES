@@ -13,7 +13,13 @@ def loadmodelprediction(_dirname, epoch=None, num_batches=1, file_header="logits
     print(">>> Reading model predictions from: ", dirname)
 
     logits_t = np.array([np.load(f).astype(np.float16) for f in f_logits_t])
+    for i in range(1, num_batches):
+        dirname_2 = f'../g0_{i}'
+        f_logits_t_2 = glob.glob(os.path.join(dirname_2, file_header+"_val_inttime*"))
+        logits_t_2 = np.array([np.load(f).astype(np.float16) for f in f_logits_t_2])
+        logits_t = np.concatenate([logits_t, logits_t_2], axis=1)
     diffusion_t = np.array([float(x.replace(os.path.join(dirname, file_header+"_val_inttime"), "").replace(".npy",""))-1 for x in f_logits_t])
+
     idx_order = np.argsort(diffusion_t)
     logits_t = logits_t[idx_order]
     diffusion_t = diffusion_t[idx_order]
@@ -80,7 +86,7 @@ def histvar(seq, varfunc, bins, num_samples):
     F_res = calculateError(F_all)
     return hist, bin_centers_all[0], P_res, F_res, np.array(idxF_res)
 
-logits_t, diffusion_t = loadmodelprediction("./")
+logits_t, diffusion_t = loadmodelprediction("./", num_batches=1)
 seq_t = logits2seq(logits_t)
 
 ofile_fes = open("FES-MAGN.dat", "wb")

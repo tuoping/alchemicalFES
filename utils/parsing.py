@@ -43,7 +43,7 @@ def parse_train_args():
     
     if args.clsfree_guidance or args.cls_guidance:
         args.guided = True
-    os.environ["MODEL_DIR"]=f"/nfs/scistore23/chenggrp/ptuo/NeuralRG/alchemicalFES/logs-dir-ising/latt6x6T{args.modeldir_temperature}/{args.modeldir_type}"
+    os.environ["MODEL_DIR"]=f"/home/tuoping/alchemicalFES/logs-dir-ising/latt6x6T{args.modeldir_temperature}/{args.modeldir_type}"
     print("Model dir:: ")
     print(os.environ["MODEL_DIR"])
     os.environ["work_dir"]=os.path.join(os.environ["MODEL_DIR"], f"val_baseline_latt{args.validation_lattice_size}x{args.validation_lattice_size}/epoch{args.ckpt_epoch}_{args.workdir_descriptor}")

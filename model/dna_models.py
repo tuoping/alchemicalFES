@@ -164,7 +164,7 @@ class CNNModel(nn.Module):
         #     feat = self.bn2(feat)
         return feat
     
-from memory_profiler import profile
+# from memory_profiler import profile
 
 class CNNModel3D(nn.Module):
     def __init__(self, args, alphabet_size, num_cls, classifier=False):
