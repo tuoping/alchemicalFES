@@ -17,6 +17,7 @@ def loadmodelprediction(_dirname, epoch=None, num_batches=1, file_header="logits
         dirname_2 = f'../g0_{i}'
         f_logits_t_2 = glob.glob(os.path.join(dirname_2, file_header+"_val_inttime*"))
         logits_t_2 = np.array([np.load(f).astype(np.float16) for f in f_logits_t_2])
+        print(logits_t.shape, logits_t_2.shape)
         logits_t = np.concatenate([logits_t, logits_t_2], axis=1)
     diffusion_t = np.array([float(x.replace(os.path.join(dirname, file_header+"_val_inttime"), "").replace(".npy",""))-1 for x in f_logits_t])
 

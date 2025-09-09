@@ -591,7 +591,7 @@ class simplexModule(GeneralModule):
                 flow_guided = probs_cond ** g * probs
                 flow_guided = flow_guided / flow_guided.sum(-1)[...,None]
             else:
-                flow_guided = probs_cond ** self.hyperparams.guidance_scale * probs
+                flow_guided = probs_cond ** self.hyperparams.guidance_scale * probs ** (1-self.hyperparams.guidance_scale)
                 flow_guided = flow_guided / flow_guided.sum(-1)[...,None]
         else:
             ### probability addition
