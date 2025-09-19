@@ -614,32 +614,19 @@ class simplexModule(GeneralModule):
         np.save(os.path.join(os.environ["work_dir"], "m_condition"), cls.cpu().to(torch.float16).numpy())
         np.save(os.path.join(os.environ["work_dir"], "e_condition"), energy_op.cpu().to(torch.float16).numpy())
         for i, (s, t) in enumerate(zip(t_span[:-1], t_span[1:])):
-            if torch.rand(1) > (1-self.hyperparams.shuffle_cls_freq):
-                print("Shuffling", i)
-                if not self.hyperparams.enforce_symm:
-                    logits = self.model(xt, t=s[None].expand(B), cls=cls[torch.randperm(B)], e=energy_op[torch.randperm(B)])
-                else:
-                    ### TODO: Something wrong with the following symmetric prediction,
-                    ## either the model can't do this because not trained with symm loss,
-                    ## or symm op seperately on cond and uncond models doesn't work.
-                    ## Can consider putting the enforce_symm op to after the score guidance.
-                    raise Exception("Score guided generation doesn't work with enforce_symm == True")
-
+            print("Step", i)
+            if not self.hyperparams.enforce_symm:
+                logits, clsemb, eemb = self.model(xt[:B], t=s[None].expand(B), cls=cls[:B], e=energy_op[:B], return_embedding=True)
+                if (i+1) % self.hyperparams.dump_freq == 0 and self.hyperparams.cls_free_guidance:
+                    np.save(os.path.join(os.environ["work_dir"], f"clemb_val_inttime{s}"), clsemb.cpu().to(torch.float16).numpy())
+                    np.save(os.path.join(os.environ["work_dir"], f"eemb_val_inttime{s}"), eemb.cpu().to(torch.float16).numpy())
+                    np.save(os.path.join(os.environ["work_dir"], f"rawcondpp_val_inttime{s}"), torch.nn.functional.softmax(logits.permute(0,2,3,1), dim=-1).cpu().to(torch.float16).numpy())
             else:
-                print("Step", i)
-                if not self.hyperparams.enforce_symm:
-                    logits, clsemb, eemb = self.model(xt[:B], t=s[None].expand(B), cls=cls[:B], e=energy_op[:B], return_embedding=True)
-                    if (i+1) % self.hyperparams.dump_freq == 0 and self.hyperparams.cls_free_guidance:
-                        np.save(os.path.join(os.environ["work_dir"], f"clemb_val_inttime{s}"), clsemb.cpu().to(torch.float16).numpy())
-                        np.save(os.path.join(os.environ["work_dir"], f"eemb_val_inttime{s}"), eemb.cpu().to(torch.float16).numpy())
-                        np.save(os.path.join(os.environ["work_dir"], f"rawcondpp_val_inttime{s}"), torch.nn.functional.softmax(logits.permute(0,2,3,1), dim=-1).cpu().to(torch.float16).numpy())
-
-                else:
-                    ### TODO: Something wrong with the following symmetric prediction,
-                    ## either the model can't do this because not trained with symm loss,
-                    ## or symm op seperately on cond and uncond models doesn't work.
-                    ## Can consider putting the enforce_symm op to after the score guidance.
-                    raise Exception("Score guided generation doesn't work with enforce_symm == True")
+                ### TODO: Something wrong with the following symmetric prediction,
+                ## either the model can't do this because not trained with symm loss,
+                ## or symm op seperately on cond and uncond models doesn't work.
+                ## Can consider putting the enforce_symm op to after the score guidance.
+                raise Exception("Score guided generation doesn't work with enforce_symm == True")
 
             if self.hyperparams.score_free_guidance or not self.hyperparams.guided:
                 flow_probs = torch.nn.functional.softmax(logits.permute(0,2,3,1)/self.hyperparams.flow_temp, -1)
